@@ -31,10 +31,11 @@ _build-mainnet:
 # like build-mainnet, but slower and more deterministic
 .PHONY: build-mainnet-reproducible
 build-mainnet-reproducible:
-	docker run --rm -v "$$(pwd)":/contract \
-		--mount type=volume,source="$$(basename "$$(pwd)")_cache",target=/contract/target \
-		--mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
-		ghcr.io/scrtlabs/localsecret:v1.6.0-rc.3
+    docker run --rm -v "$$(pwd)":/contract \
+            --mount type=volume,source="$$(basename "$$(pwd)")_cache",target=/code/target \
+            --mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
+            enigmampc/secret-contract-optimizer:1.0.10
+
 
 .PHONY: compress-wasm
 compress-wasm:
