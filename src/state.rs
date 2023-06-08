@@ -1,7 +1,11 @@
-use secret_toolkit::storage::{Keymap};
+use base64::{engine::general_purpose, Engine as _};
+use hkdf::Hkdf;
+use sha2::Sha256;
+use secret_toolkit::{storage::{Keymap, Item}, crypto::ContractPrng};
 
-use cosmwasm_std::{CanonicalAddr, Storage, StdResult};
+use cosmwasm_std::{CanonicalAddr, Storage, StdResult, Env, StdError};
 
+pub static INTERNAL_SECRET: Item<Vec<u8>> = Item::new(b"secret");
 pub static COUNTERS: Keymap<CanonicalAddr,u64> = Keymap::new(b"counters");
 pub static SEEDS: Keymap<CanonicalAddr,String> = Keymap::new(b"seeds");
 
@@ -36,10 +40,34 @@ pub fn update_seed(
 }
 
 /// get the seed for a given address
-#[inline]
+/// fun getSeedFor(recipientAddr) {
+///   // recipient has a shared secret with contract
+///   let seed := sharedSecretsTable[recipientAddr]
+/// 
+///   // no explicit shared secret; derive seed using contract's internal secret
+///   if NOT exists(seed):
+///     seed := hkdf(ikm=contractInternalSecret, info=canonical(recipientAddr))
+///
+///   return seed
+/// }
+
 pub fn get_seed(
     storage: &dyn Storage,
     addr: &CanonicalAddr,
-) -> Option<String> {
-    SEEDS.get(storage, addr)
+) -> StdResult<String> {
+    let may_seed = SEEDS.get(storage, addr);
+
+    if let Some(seed) = may_seed {
+        Ok(seed)
+    } else {
+        let secret = INTERNAL_SECRET.load(storage)?;
+        let ikm = secret.as_slice();
+        let hk = Hkdf::<Sha256>::new(None, ikm);
+        let mut okm = [0u8; 42];
+        let seed = match hk.expand(&addr.as_slice(), &mut okm) {
+            Ok(_) => { general_purpose::STANDARD.encode(okm) }
+            Err(e) => { return Err(StdError::generic_err(format!("{:?}", e))); }
+        };
+        Ok(seed)
+    }
 }

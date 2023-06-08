@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use crate::signed_doc::{SignedDocument};
 
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
-pub struct InstantiateMsg { }
+pub struct InstantiateMsg { 
+    pub entropy: String,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]

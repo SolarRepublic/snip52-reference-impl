@@ -1,18 +1,32 @@
 use cosmwasm_std::{
     entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Addr,
 };
-
+use secret_toolkit::crypto::{ContractPrng, sha_256};
+use base64::{engine::general_purpose, Engine as _};
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, QueryAnswer, ViewerInfo};
 use crate::signed_doc::SignedDocument;
-use crate::state::{increment_count};
+use crate::state::{increment_count, INTERNAL_SECRET};
 
 #[entry_point]
 pub fn instantiate(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> StdResult<Response> {
+    let entropy = msg.entropy.as_bytes();
+    let entropy_len = 16 + info.sender.to_string().len() + entropy.len();
+    let mut rng_entropy = Vec::with_capacity(entropy_len);
+    rng_entropy.extend_from_slice(&env.block.height.to_be_bytes());
+    rng_entropy.extend_from_slice(&env.block.time.seconds().to_be_bytes());
+    rng_entropy.extend_from_slice(info.sender.as_bytes());
+    rng_entropy.extend_from_slice(entropy);
+    let seed = env.block.random.as_ref().unwrap();
+    let mut rng = ContractPrng::new(seed, &rng_entropy);
+    let rand_slice = rng.rand_bytes();
+    let key = sha_256(&rand_slice);
+    INTERNAL_SECRET.save(deps.storage, &general_purpose::STANDARD.encode(key).as_bytes().to_vec())?;
+
     Ok(Response::default())
 }
 
@@ -88,7 +102,7 @@ mod tests {
                 amount: Uint128::new(1000),
             }],
         );
-        let init_msg = InstantiateMsg { };
+        let init_msg = InstantiateMsg { entropy: "secret sauce".to_string() };
 
         // we can just call .unwrap() to assert this was a success
         let res = instantiate(deps.as_mut(), mock_env(), info, init_msg).unwrap();
