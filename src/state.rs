@@ -1,21 +1,45 @@
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use secret_toolkit::storage::{Keymap};
 
-use cosmwasm_std::{Addr, Storage};
-use cosmwasm_storage::{singleton, singleton_read, ReadonlySingleton, Singleton};
+use cosmwasm_std::{CanonicalAddr, Storage, StdResult};
 
-pub static CONFIG_KEY: &[u8] = b"config";
+pub static COUNTERS: Keymap<CanonicalAddr,u64> = Keymap::new(b"counters");
+pub static SEEDS: Keymap<CanonicalAddr,String> = Keymap::new(b"seeds");
 
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
-pub struct State {
-    pub count: i32,
-    pub owner: Addr,
+/// increment counter for a given address
+pub fn increment_count(
+    storage: &mut dyn Storage,
+    addr: &CanonicalAddr,
+) -> StdResult<u64> {
+    let count = COUNTERS.get(storage, addr).unwrap_or(0_u64);
+    let new_count = count.wrapping_add(1_u64);
+    COUNTERS.insert(storage, addr, &new_count)?;
+    Ok(new_count)
 }
 
-pub fn config(storage: &mut dyn Storage) -> Singleton<State> {
-    singleton(storage, CONFIG_KEY)
+/// get counter for a given address
+#[inline]
+pub fn get_count(
+    storage: &dyn Storage,
+    addr: &CanonicalAddr,
+) -> u64 {
+    COUNTERS.get(storage, addr).unwrap_or(0_u64)
 }
 
-pub fn config_read(storage: &dyn Storage) -> ReadonlySingleton<State> {
-    singleton_read(storage, CONFIG_KEY)
+/// update the seed for a given address
+#[inline]
+pub fn update_seed(
+    storage: &mut dyn Storage,
+    addr: &CanonicalAddr,
+    seed: String,
+) -> StdResult<()> {
+    SEEDS.insert(storage, addr, &seed)
+}
+
+/// get the seed for a given address
+#[inline]
+pub fn get_seed(
+    storage: &dyn Storage,
+    addr: &CanonicalAddr,
+) -> Option<String> {
+    SEEDS.get(storage, addr)
 }

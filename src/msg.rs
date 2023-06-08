@@ -1,27 +1,84 @@
+use cosmwasm_std::{Uint64, Binary};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use crate::signed_doc::{SignedDocument};
 
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
-pub struct InstantiateMsg {
-    pub count: i32,
-}
+pub struct InstantiateMsg { }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
-    Increment {},
-    Reset { count: i32 },
+    /// transaction that emits event on the chain
+    Tx { 
+        /// optional message length padding
+        padding: Option<String>
+    },
+    UpdateSeed {
+        /// id of channel
+        channel: String,
+        /// signed doc
+        signed_doc: SignedDocument,
+        /// optional message length padding
+        padding: Option<String>,
+    },
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecuteAnswer {
+    Tx {
+        response: ResponseStatus,
+    },
+    UpdateSeed {
+        channel: String,
+        seed: Binary,
+        counter: Uint64,
+        next_id: String,
+        as_of_block: Uint64,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
-    // GetCount returns the current count as a json-encoded number
-    GetCount {},
+    /// Public query to list all notification channels
+    ListChannels {},
+    /// Authenticated query allows clients to obtain the seed, counter, and 
+    ///   Notification ID of a future event, for a specific channel.
+    ChannelInfo {
+        channel: String,
+        viewer: ViewerInfo,
+    },
 }
 
-// We define a custom struct for each query response
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
-pub struct CountResponse {
-    pub count: i32,
+#[derive(Serialize, Deserialize, JsonSchema, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum QueryAnswer {
+    ListChannels {
+        channels: Vec<String>,
+    },
+    ChannelInfo {
+        channel: String,
+        seed: Binary,
+        counter: Uint64,
+        next_id: String,
+        as_of_block: Uint64,
+    },
+}
+
+/// the address and viewing key making an authenticated query request
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+pub struct ViewerInfo {
+    /// querying address
+    pub address: String,
+    /// authentication key string
+    pub viewing_key: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum ResponseStatus {
+    Success,
+    Failure,
 }
