@@ -1,11 +1,14 @@
+use std::collections::HashSet;
+
+use bech32::{ToBase32,Variant};
 use cosmwasm_std::{
-    entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Addr,
+    entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Addr, ContractInfo, StdError, Api, Uint64, CanonicalAddr,
 };
 use secret_toolkit::crypto::{ContractPrng, sha_256};
 use base64::{engine::general_purpose, Engine as _};
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, QueryAnswer, ViewerInfo};
-use crate::signed_doc::SignedDocument;
-use crate::state::{increment_count, INTERNAL_SECRET};
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, QueryAnswer, ViewerInfo, ExecuteAnswer};
+use crate::signed_doc::{SignedDocument, pubkey_to_account, Document};
+use crate::state::{increment_count, INTERNAL_SECRET, SEEDS, get_seed, CHANNELS, store_seed, COUNTERS, get_count};
 
 #[entry_point]
 pub fn instantiate(
@@ -27,15 +30,28 @@ pub fn instantiate(
     let key = sha_256(&rand_slice);
     INTERNAL_SECRET.save(deps.storage, &general_purpose::STANDARD.encode(key).as_bytes().to_vec())?;
 
+    if msg.channels.len() == 0 {
+        return Err(StdError::generic_err("No channel ids"))
+    }
+
+    msg.channels
+        .into_iter()
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .for_each(|channel| {
+            CHANNELS.insert(deps.storage, &channel);
+        });
+
     Ok(Response::default())
 }
 
 #[entry_point]
 pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> StdResult<Response> {
     match msg {
-        ExecuteMsg::Tx { .. } => try_tx(deps, &info.sender),
+        ExecuteMsg::Tx { channel, .. } => try_tx(deps, &info.sender, channel),
         ExecuteMsg::UpdateSeed { channel, signed_doc, .. } => try_update_seed(
-            deps, 
+            deps,
+            env,
             &info.sender, 
             channel, 
             signed_doc
@@ -43,18 +59,113 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
     }
 }
 
-pub fn try_tx(deps: DepsMut, sender: &Addr) -> StdResult<Response> {
-    increment_count(deps.storage, &deps.api.addr_canonicalize(sender.as_str())?)?;
+pub fn try_tx(
+    deps: DepsMut,
+    sender: &Addr,
+    channel: String,
+) -> StdResult<Response> {
+    increment_count(deps.storage, &channel, &deps.api.addr_canonicalize(sender.as_str())?)?;
     Ok(Response::default())
+}
+
+fn validate_signed_doc(
+    api: &dyn Api,
+    signed_doc: &SignedDocument,
+    hrp: Option<&str>,
+) -> StdResult<String> {
+    let account_hrp = hrp.unwrap_or("secret");
+
+    // Derive account from pubkey
+    let pubkey = &signed_doc.signature.pub_key.value;
+
+    let base32_addr = pubkey_to_account(pubkey).0.as_slice().to_base32();
+    let account: String = bech32::encode(account_hrp, base32_addr, Variant::Bech32).unwrap();
+
+    let signed_bytes = to_binary(&Document::from_params(&signed_doc.params))?;
+    let signed_bytes_hash = sha_256(signed_bytes.as_slice());
+
+    let verified = api
+        .secp256k1_verify(
+            &signed_bytes_hash, 
+            &signed_doc.signature.signature.0, 
+            &pubkey.0
+        ).map_err(|err| StdError::generic_err(err.to_string()))?;
+    
+    if !verified {
+        return Err(StdError::generic_err(
+            "Failed to verify signatures for the given signed doc",
+        ));
+    }
+
+    Ok(account)
+}
+
+/// fun notificationIDFor(contractOrRecipientAddr, channelId) {
+///    // counter reflects the nth notification for the given contract/recipient in the given channel
+///    let counter := getCounterFor(contractOrRecipientAddr, channelId)
+///
+///    // compute notification ID for this event
+///    let seed := getSeedFor(contractOrRecipientAddr)
+///    let material := concat(channelId, ":", counter)
+///    let notificationID := hmac_sha256(key=seed, message=material)
+///
+///    return notificationID
+///  }
+fn notification_id(
+    addr: &CanonicalAddr,
+    channel: &String,
+) -> StdResult<Binary> {
+    // todo
+    Ok(Binary::from(vec![0_u8, 0_u8, 0_u8, 0_u8]))
 }
 
 pub fn try_update_seed(
     deps: DepsMut,
+    env: Env,
     sender: &Addr,
     channel: String,
     signed_doc: SignedDocument,
 ) -> StdResult<Response> {
-    Ok(Response::default())
+    if channel.len() == 0 {
+        return Err(StdError::generic_err("Channel id is an empty string"));
+    }
+
+    if !CHANNELS.contains(deps.storage, &channel) {
+        return Err(StdError::generic_err("Invalid channel id"));
+    }
+
+    let account = validate_signed_doc(deps.api, &signed_doc, None)?;
+
+    if sender.as_str() != account {
+        return Err(StdError::generic_err("Signed doc is not signed by sender"));
+    }
+
+    if signed_doc.params.contract != env.contract.address.as_str() {
+        return Err(StdError::generic_err(
+            "Signed doc is not for this contract",
+        ));
+    }
+
+    let sender_raw = deps.api.addr_canonicalize(sender.as_str())?;
+
+    let previous_seed = get_seed(deps.storage, &channel, &sender_raw)?;
+    if previous_seed != signed_doc.params.previous_seed {
+        return Err(StdError::generic_err("Previous seed does not match previous seed in signed doc"));
+    }
+
+    store_seed(deps.storage, &channel, &sender_raw, signed_doc.signature.signature.clone().0)?;
+
+    let counter = get_count(deps.storage, &channel, &sender_raw);
+
+    let next_id = notification_id(&sender_raw, &channel)?;
+
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::UpdateSeed {
+        channel,
+        seed: signed_doc.signature.signature,
+        counter: Uint64::from(counter),
+        next_id,
+        as_of_block: Uint64::from(env.block.height),
+    })?))
 }
 
 #[entry_point]
@@ -102,7 +213,13 @@ mod tests {
                 amount: Uint128::new(1000),
             }],
         );
-        let init_msg = InstantiateMsg { entropy: "secret sauce".to_string() };
+        let init_msg = InstantiateMsg {
+            channels: vec![
+                "channel1".to_string(),
+                "channel2".to_string(),
+            ],
+            entropy: "secret sauce".to_string(),
+        };
 
         // we can just call .unwrap() to assert this was a success
         let res = instantiate(deps.as_mut(), mock_env(), info, init_msg).unwrap();

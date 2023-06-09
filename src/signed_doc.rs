@@ -26,6 +26,25 @@ pub struct Document {
     pub sequence: Uint128,
 }
 
+impl Document {
+    pub fn from_params(params: &DocParams) -> Self {
+        Self {
+            account_number: Uint128::zero(),
+            chain_id: params.chain_id.clone(),
+            fee: Fee::new(),
+            memo: String::new(),
+            msgs: vec![DocumentMsg {
+                r#type: "notification_seed".to_string(),
+                value: MsgValue { 
+                    contract: params.clone().contract, 
+                    previous_seed: params.clone().previous_seed 
+                }
+            }],
+            sequence: Uint128::zero(),
+        }
+    }
+}
+
 /// Message
 /// Note: The order of fields in this struct is important for the document signature verification!
 #[remain::sorted]
@@ -98,6 +117,14 @@ impl Default for Coin {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct DocParams {
+    pub chain_id: String,
+    pub contract: String,
+    pub previous_seed: Binary,
+}
+
 /// Signature
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -126,8 +153,8 @@ impl PubKey {
 #[serde(rename_all = "snake_case")]
 pub struct SignedDocument {
     #[serde(bound = "")]
-    document: Document,
-    signature: Signature,
+    pub params: DocParams,
+    pub signature: Signature,
 }
 
 pub fn pubkey_to_account(pubkey: &Binary) -> CanonicalAddr {

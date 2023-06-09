@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 use crate::signed_doc::{SignedDocument};
 
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
-pub struct InstantiateMsg { 
+pub struct InstantiateMsg {
+    pub channels: Vec<String>, 
     pub entropy: String,
 }
 
@@ -13,6 +14,8 @@ pub struct InstantiateMsg {
 pub enum ExecuteMsg {
     /// transaction that emits event on the chain
     Tx { 
+        /// channel to increment the counter on
+        channel: String,
         /// optional message length padding
         padding: Option<String>
     },
@@ -36,7 +39,7 @@ pub enum ExecuteAnswer {
         channel: String,
         seed: Binary,
         counter: Uint64,
-        next_id: String,
+        next_id: Binary,
         as_of_block: Uint64,
     },
 }
@@ -64,7 +67,7 @@ pub enum QueryAnswer {
         channel: String,
         seed: Binary,
         counter: Uint64,
-        next_id: String,
+        next_id: Binary,
         as_of_block: Uint64,
     },
 }
