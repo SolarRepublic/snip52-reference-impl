@@ -20,8 +20,6 @@ pub enum ExecuteMsg {
         padding: Option<String>
     },
     UpdateSeed {
-        /// id of channel
-        channel: String,
         /// signed doc
         signed_doc: SignedDocument,
         /// optional message length padding
@@ -36,11 +34,7 @@ pub enum ExecuteAnswer {
         response: ResponseStatus,
     },
     UpdateSeed {
-        channel: String,
         seed: Binary,
-        counter: Uint64,
-        next_id: Binary,
-        as_of_block: Uint64,
     },
 }
 

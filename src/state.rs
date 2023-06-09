@@ -38,11 +38,10 @@ pub fn get_count(
 #[inline]
 pub fn store_seed(
     storage: &mut dyn Storage,
-    channel: &String,
     addr: &CanonicalAddr,
     seed: Vec<u8>,
 ) -> StdResult<()> {
-    SEEDS.add_suffix(channel.as_bytes()).insert(storage, addr, &seed)
+    SEEDS.insert(storage, addr, &seed)
 }
 
 /// get the seed for a given address
@@ -59,10 +58,9 @@ pub fn store_seed(
 
 pub fn get_seed(
     storage: &dyn Storage,
-    channel: &String,
     addr: &CanonicalAddr,
 ) -> StdResult<Binary> {
-    let may_seed = SEEDS.add_suffix(channel.as_bytes()).get(storage, addr);
+    let may_seed = SEEDS.get(storage, addr);
     if let Some(seed) = may_seed {
         Ok(Binary::from(seed))
     } else {
@@ -110,7 +108,7 @@ mod tests {
         let alice = Addr::unchecked("alice".to_string());
         let alice_raw = deps.api.addr_canonicalize(alice.as_str()).unwrap();
 
-        let seed = get_seed(&deps.storage, &"channel".to_string(), &alice_raw);
+        let seed = get_seed(&deps.storage, &alice_raw);
         println!("seed: {:?}", seed);
         println!("seed len: {:?}", seed.as_ref().unwrap().len());
     }

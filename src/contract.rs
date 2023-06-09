@@ -49,11 +49,10 @@ pub fn instantiate(
 pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> StdResult<Response> {
     match msg {
         ExecuteMsg::Tx { channel, .. } => try_tx(deps, &info.sender, channel),
-        ExecuteMsg::UpdateSeed { channel, signed_doc, .. } => try_update_seed(
+        ExecuteMsg::UpdateSeed { signed_doc, .. } => try_update_seed(
             deps,
             env,
             &info.sender, 
-            channel, 
             signed_doc
         ),
     }
@@ -123,17 +122,8 @@ pub fn try_update_seed(
     deps: DepsMut,
     env: Env,
     sender: &Addr,
-    channel: String,
     signed_doc: SignedDocument,
 ) -> StdResult<Response> {
-    if channel.len() == 0 {
-        return Err(StdError::generic_err("Channel id is an empty string"));
-    }
-
-    if !CHANNELS.contains(deps.storage, &channel) {
-        return Err(StdError::generic_err("Invalid channel id"));
-    }
-
     let account = validate_signed_doc(deps.api, &signed_doc, None)?;
 
     if sender.as_str() != account {
@@ -148,23 +138,15 @@ pub fn try_update_seed(
 
     let sender_raw = deps.api.addr_canonicalize(sender.as_str())?;
 
-    let previous_seed = get_seed(deps.storage, &channel, &sender_raw)?;
+    let previous_seed = get_seed(deps.storage, &sender_raw)?;
     if previous_seed != signed_doc.params.previous_seed {
         return Err(StdError::generic_err("Previous seed does not match previous seed in signed doc"));
     }
 
-    store_seed(deps.storage, &channel, &sender_raw, signed_doc.signature.signature.clone().0)?;
-
-    let counter = get_count(deps.storage, &channel, &sender_raw);
-
-    let next_id = notification_id(&sender_raw, &channel)?;
+    store_seed(deps.storage, &sender_raw, signed_doc.signature.signature.clone().0)?;
 
     Ok(Response::new().set_data(to_binary(&ExecuteAnswer::UpdateSeed {
-        channel,
         seed: signed_doc.signature.signature,
-        counter: Uint64::from(counter),
-        next_id,
-        as_of_block: Uint64::from(env.block.height),
     })?))
 }
 
