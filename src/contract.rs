@@ -1,17 +1,17 @@
 use std::collections::HashSet;
-
 use bech32::{ToBase32,Variant};
 use cosmwasm_std::{
-    entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Addr, ContractInfo, StdError, Api, Uint64, CanonicalAddr, Storage,
+    entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Addr, StdError, Api, CanonicalAddr, Storage, Uint64,
 };
 use secret_toolkit::crypto::{ContractPrng, sha_256};
 use secret_toolkit::viewing_key::{ViewingKey, ViewingKeyStore};
 use base64::{engine::general_purpose, Engine as _};
-use hkdf::hmac::Mac;
+use hkdf::hmac::{Mac};
 use crate::crypto::HmacSha256;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, QueryAnswer, ViewerInfo, ExecuteAnswer, ResponseStatus::Success};
+use crate::random::cipher_data;
 use crate::signed_doc::{SignedDocument, pubkey_to_account, Document};
-use crate::state::{increment_count, INTERNAL_SECRET, SEEDS, get_seed, CHANNELS, store_seed, COUNTERS, get_count};
+use crate::state::{increment_count, INTERNAL_SECRET, get_seed, CHANNELS, store_seed, get_count};
 
 #[entry_point]
 pub fn instantiate(
@@ -42,7 +42,7 @@ pub fn instantiate(
         .collect::<HashSet<_>>()
         .into_iter()
         .for_each(|channel| {
-            CHANNELS.insert(deps.storage, &channel);
+            CHANNELS.insert(deps.storage, &channel).unwrap();
         });
 
     let prng_seed = sha_256(
@@ -74,8 +74,26 @@ fn try_tx(
     sender: &Addr,
     channel: String,
 ) -> StdResult<Response> {
-    increment_count(deps.storage, &channel, &deps.api.addr_canonicalize(sender.as_str())?)?;
-    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::Tx { response: Success })?))
+    let sender_raw = deps.api.addr_canonicalize(sender.as_str())?;
+    let count = increment_count(deps.storage, &channel, &sender_raw)?;
+
+    let id = notification_id(deps.storage, &sender_raw, &channel)?;
+    let data = encrypt_notification_data(
+        deps.storage,
+        &sender_raw,
+        &channel,
+        format!("You have a new event {} on channel {}!", count, channel).as_str()
+    )?;
+
+    Ok(Response::new()
+        .set_data(
+            to_binary(&ExecuteAnswer::Tx { response: Success })?
+        )
+        .add_attribute_plaintext(
+            format!("wasm.{}", id.to_base64()), 
+            data.to_base64()
+        )
+    )
 }
 
 pub fn try_update_seed(
@@ -120,10 +138,10 @@ fn try_set_viewing_key(
 }
 
 #[entry_point]
-pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::ListChannels{} => query_list_channels(deps),
-        QueryMsg::ChannelInfo { channel, viewer } => query_channel_info(deps, channel, viewer),
+        QueryMsg::ChannelInfo { channel, viewer } => query_channel_info(deps, env, channel, viewer),
     }
 }
 
@@ -137,23 +155,24 @@ fn query_list_channels(deps: Deps) -> StdResult<Binary> {
 
 fn query_channel_info(
     deps: Deps,
+    env: Env,
     channel: String,
     viewer: ViewerInfo,
 ) -> StdResult<Binary> {
     // make sure the viewing key is valid
     ViewingKey::check(deps.storage, &viewer.address, &viewer.viewing_key)?;
+    let sender_raw = deps.api.addr_canonicalize(viewer.address.as_str())?;
 
+    let next_id = notification_id(deps.storage, &sender_raw, &channel)?;
+    let counter = Uint64::from(get_count(deps.storage, &channel, &sender_raw));
 
-    to_binary("data")
-    /* 
     to_binary(&QueryAnswer::ChannelInfo { 
-        channel: (), 
-        seed: (), 
-        counter: (), 
-        next_id: (), 
-        as_of_block: () 
+        channel,
+        seed: get_seed(deps.storage, &sender_raw)?, 
+        counter, 
+        next_id, 
+        as_of_block: Uint64::from(env.block.height),
     })
-    */
 }
 
 fn validate_signed_doc(
@@ -221,11 +240,40 @@ fn notification_id(
     Ok(Binary::from(code_bytes.as_slice()))
 }
 
+/// fun encryptNotificationData(recipientAddr, channelId, plaintext) {
+///   // counter reflects the nth notification for the given recipient in the given channel
+///   let counter := getCounterFor(recipientAddr, channelId)
+///
+///   // encrypt notification data for this event
+///   let seed := getSeedFor(recipientAddr)
+///   let notificationData := chacha20poly1305_encrypt(key=seed, nonce=counter, message=pad(plaintext, DATA_LEN))
+///
+///   return notificationData
+/// }
+fn encrypt_notification_data(
+    storage: &dyn Storage,
+    addr: &CanonicalAddr,
+    channel: &String,
+    plaintext: &str,
+) -> StdResult<Binary> {
+    let counter = get_count(storage, channel, addr);
+
+    // encrypt notification data for this event
+    let seed = get_seed(storage, addr)?;
+    let cipher_text = cipher_data(
+        seed.0.as_slice(),
+        counter.to_be_bytes().as_slice(),
+        plaintext
+    )?;
+
+    Ok(Binary::from(cipher_text))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use cosmwasm_std::testing::*;
-    use cosmwasm_std::{from_binary, Coin, StdError, Uint128};
+    use cosmwasm_std::{Coin, Uint128};
 
     #[test]
     fn proper_initialization() {
