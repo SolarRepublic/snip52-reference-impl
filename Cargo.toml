@@ -32,7 +32,7 @@ backtraces = ["cosmwasm-std/backtraces"]
 
 cosmwasm-std = { version = "1.1.10", package = "secret-cosmwasm-std", features = ["random"] }
 cosmwasm-storage = { version = "1.1.10", package = "secret-cosmwasm-storage" }
-secret-toolkit = { git = "https://github.com/scrtlabs/secret-toolkit", version = "0.9.0", features = ["crypto"] }
+secret-toolkit = { git = "https://github.com/scrtlabs/secret-toolkit", version = "0.9.0", features = ["crypto", "viewing-key"] }
 #secret-toolkit-crypto = { git = "https://github.com/scrtlabs/secret-toolkit", branch = "0.9", features = ["hash", "rand", "ecc-secp256k1"] }
 
 #cosmwasm-std = { git = "https://github.com/scrtlabs/cosmwasm", tag = "v1.1.9-secret" }
@@ -48,6 +48,8 @@ remain = "0.2.8"
 bech32 = "0.9.1"
 sha2 = "0.10.6"
 hkdf = "0.12.3"
+chacha20poly1305 = "0.10.1"
+generic-array = "0.14.7"
 base64 = "0.21.0"
 
 # Uncomment these for some common extra tools
