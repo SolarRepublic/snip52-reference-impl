@@ -66,7 +66,6 @@ pub fn get_seed(
     } else {
         let secret = INTERNAL_SECRET.load(storage)?;
         let ikm = secret.as_slice();
-        println!("ikm: {:?}", ikm);
         let hk: Hkdf<Sha256> = Hkdf::<Sha256>::new(None, ikm);
         let mut okm = [0u8; 32];
         let seed = match hk.expand(&addr.as_slice(), &mut okm) {

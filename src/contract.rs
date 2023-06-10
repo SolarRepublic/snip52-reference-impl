@@ -2,11 +2,14 @@ use std::collections::HashSet;
 
 use bech32::{ToBase32,Variant};
 use cosmwasm_std::{
-    entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Addr, ContractInfo, StdError, Api, Uint64, CanonicalAddr,
+    entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Addr, ContractInfo, StdError, Api, Uint64, CanonicalAddr, Storage,
 };
 use secret_toolkit::crypto::{ContractPrng, sha_256};
+use secret_toolkit::viewing_key::{ViewingKey, ViewingKeyStore};
 use base64::{engine::general_purpose, Engine as _};
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, QueryAnswer, ViewerInfo, ExecuteAnswer};
+use hkdf::hmac::Mac;
+use crate::crypto::HmacSha256;
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, QueryAnswer, ViewerInfo, ExecuteAnswer, ResponseStatus::Success};
 use crate::signed_doc::{SignedDocument, pubkey_to_account, Document};
 use crate::state::{increment_count, INTERNAL_SECRET, SEEDS, get_seed, CHANNELS, store_seed, COUNTERS, get_count};
 
@@ -42,6 +45,13 @@ pub fn instantiate(
             CHANNELS.insert(deps.storage, &channel);
         });
 
+    let prng_seed = sha_256(
+        general_purpose::STANDARD
+            .encode(rng.rand_bytes())
+            .as_bytes(),
+    );
+    ViewingKey::set_seed(deps.storage, &prng_seed);
+
     Ok(Response::default())
 }
 
@@ -55,16 +65,95 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
             &info.sender, 
             signed_doc
         ),
+        ExecuteMsg::SetViewingKey { viewing_key, .. } => try_set_viewing_key(deps, &info.sender, viewing_key),
     }
 }
 
-pub fn try_tx(
+fn try_tx(
     deps: DepsMut,
     sender: &Addr,
     channel: String,
 ) -> StdResult<Response> {
     increment_count(deps.storage, &channel, &deps.api.addr_canonicalize(sender.as_str())?)?;
-    Ok(Response::default())
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::Tx { response: Success })?))
+}
+
+pub fn try_update_seed(
+    deps: DepsMut,
+    env: Env,
+    sender: &Addr,
+    signed_doc: SignedDocument,
+) -> StdResult<Response> {
+    let account = validate_signed_doc(deps.api, &signed_doc, None)?;
+
+    if sender.as_str() != account {
+        return Err(StdError::generic_err("Signed doc is not signed by sender"));
+    }
+
+    if signed_doc.params.contract != env.contract.address.as_str() {
+        return Err(StdError::generic_err(
+            "Signed doc is not for this contract",
+        ));
+    }
+
+    let sender_raw = deps.api.addr_canonicalize(sender.as_str())?;
+
+    let previous_seed = get_seed(deps.storage, &sender_raw)?;
+    if previous_seed != signed_doc.params.previous_seed {
+        return Err(StdError::generic_err("Previous seed does not match previous seed in signed doc"));
+    }
+
+    store_seed(deps.storage, &sender_raw, signed_doc.signature.signature.clone().0)?;
+
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::UpdateSeed {
+        seed: signed_doc.signature.signature,
+    })?))
+}
+
+fn try_set_viewing_key(
+    deps: DepsMut,
+    sender: &Addr,
+    viewing_key: String,
+) -> StdResult<Response> {
+    ViewingKey::set(deps.storage, sender.as_str(), &viewing_key);
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::SetViewingKey { response: Success })?))
+}
+
+#[entry_point]
+pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+    match msg {
+        QueryMsg::ListChannels{} => query_list_channels(deps),
+        QueryMsg::ChannelInfo { channel, viewer } => query_channel_info(deps, channel, viewer),
+    }
+}
+
+fn query_list_channels(deps: Deps) -> StdResult<Binary> {
+    let channels: Vec<String> = CHANNELS
+        .iter(deps.storage)?
+        .map(|channel| channel.unwrap())
+        .collect();
+    to_binary(&QueryAnswer::ListChannels { channels })
+}
+
+fn query_channel_info(
+    deps: Deps,
+    channel: String,
+    viewer: ViewerInfo,
+) -> StdResult<Binary> {
+    // make sure the viewing key is valid
+    ViewingKey::check(deps.storage, &viewer.address, &viewer.viewing_key)?;
+
+
+    to_binary("data")
+    /* 
+    to_binary(&QueryAnswer::ChannelInfo { 
+        channel: (), 
+        seed: (), 
+        counter: (), 
+        next_id: (), 
+        as_of_block: () 
+    })
+    */
 }
 
 fn validate_signed_doc(
@@ -111,72 +200,25 @@ fn validate_signed_doc(
 ///    return notificationID
 ///  }
 fn notification_id(
+    storage: &dyn Storage,
     addr: &CanonicalAddr,
     channel: &String,
 ) -> StdResult<Binary> {
-    // todo
-    Ok(Binary::from(vec![0_u8, 0_u8, 0_u8, 0_u8]))
-}
+    let counter = get_count(storage, channel, addr);
 
-pub fn try_update_seed(
-    deps: DepsMut,
-    env: Env,
-    sender: &Addr,
-    signed_doc: SignedDocument,
-) -> StdResult<Response> {
-    let account = validate_signed_doc(deps.api, &signed_doc, None)?;
+    // compute notification ID for this event
+    let seed = get_seed(storage, addr)?;
+    let material = [
+        channel.as_bytes(),
+        ":".as_bytes(),
+        &counter.to_be_bytes()
+    ].concat();
 
-    if sender.as_str() != account {
-        return Err(StdError::generic_err("Signed doc is not signed by sender"));
-    }
-
-    if signed_doc.params.contract != env.contract.address.as_str() {
-        return Err(StdError::generic_err(
-            "Signed doc is not for this contract",
-        ));
-    }
-
-    let sender_raw = deps.api.addr_canonicalize(sender.as_str())?;
-
-    let previous_seed = get_seed(deps.storage, &sender_raw)?;
-    if previous_seed != signed_doc.params.previous_seed {
-        return Err(StdError::generic_err("Previous seed does not match previous seed in signed doc"));
-    }
-
-    store_seed(deps.storage, &sender_raw, signed_doc.signature.signature.clone().0)?;
-
-    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::UpdateSeed {
-        seed: signed_doc.signature.signature,
-    })?))
-}
-
-#[entry_point]
-pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
-    match msg {
-        QueryMsg::ListChannels{} => query_list_channels(deps),
-        QueryMsg::ChannelInfo { channel, viewer } => query_channel_info(deps, channel, viewer),
-    }
-}
-
-fn query_list_channels(deps: Deps) -> StdResult<Binary> {
-    to_binary(&QueryAnswer::ListChannels { channels: vec![] })
-}
-
-fn query_channel_info(
-    deps: Deps,
-    channel: String,
-    viewer: ViewerInfo,
-) -> StdResult<Binary> {
-    to_binary("data")
-    /* 
-    to_binary(&QueryAnswer::ChannelInfo { 
-        channel: (), 
-        seed: (), 
-        counter: (), 
-        next_id: (), 
-        as_of_block: () 
-    })
-    */
+    let mut mac: HmacSha256 = HmacSha256::new_from_slice(seed.0.as_slice()).unwrap();
+    mac.update(material.as_slice());
+    let result = mac.finalize();
+    let code_bytes = result.into_bytes();
+    Ok(Binary::from(code_bytes.as_slice()))
 }
 
 #[cfg(test)]
@@ -207,5 +249,35 @@ mod tests {
         let res = instantiate(deps.as_mut(), mock_env(), info, init_msg).unwrap();
 
         assert_eq!(0, res.messages.len());
+    }
+
+    #[test]
+    fn test_notification_id() {
+        let mut deps = mock_dependencies();
+
+        let env = mock_env();
+        let info = mock_info("instantiator", &[]);
+
+        let _init = instantiate(
+            deps.as_mut(), 
+            env, 
+            info, 
+            InstantiateMsg { 
+                channels: vec![ 
+                    "channel1".to_string(),
+                    "channel2".to_string(),
+                ],
+                entropy: "entropy 12345".to_string(),
+            });
+
+        let alice = Addr::unchecked("alice".to_string());
+        let alice_raw = deps.api.addr_canonicalize(alice.as_str()).unwrap();
+
+        let seed = get_seed(&deps.storage, &alice_raw);
+        println!("seed: {:?}", seed);
+        println!("seed len: {:?}", seed.as_ref().unwrap().len());
+
+        let id = notification_id(&deps.storage, &alice_raw, &"channel1".to_string());
+        println!("notification id: {:?}", id);
     }
 }

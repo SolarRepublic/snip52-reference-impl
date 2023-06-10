@@ -19,9 +19,17 @@ pub enum ExecuteMsg {
         /// optional message length padding
         padding: Option<String>
     },
+    /// updates the seed with a new document signature
     UpdateSeed {
         /// signed doc
         signed_doc: SignedDocument,
+        /// optional message length padding
+        padding: Option<String>,
+    },
+    /// set viewing key
+    SetViewingKey {
+        /// viewing key
+        viewing_key: String,
         /// optional message length padding
         padding: Option<String>,
     },
@@ -35,6 +43,9 @@ pub enum ExecuteAnswer {
     },
     UpdateSeed {
         seed: Binary,
+    },
+    SetViewingKey {
+        response: ResponseStatus,
     },
 }
 
