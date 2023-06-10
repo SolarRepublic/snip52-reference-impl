@@ -3,15 +3,19 @@ use bech32::{ToBase32,Variant};
 use cosmwasm_std::{
     entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Addr, StdError, Api, CanonicalAddr, Storage, Uint64,
 };
+use minicbor_ser as cbor;
 use secret_toolkit::crypto::{ContractPrng, sha_256};
+use secret_toolkit::utils::space_pad;
 use secret_toolkit::viewing_key::{ViewingKey, ViewingKeyStore};
 use base64::{engine::general_purpose, Engine as _};
 use hkdf::hmac::{Mac};
-use crate::crypto::HmacSha256;
+use crate::crypto::{HmacSha256, cipher_data};
+use crate::msg::TxChannelData;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, QueryAnswer, ViewerInfo, ExecuteAnswer, ResponseStatus::Success};
-use crate::random::cipher_data;
 use crate::signed_doc::{SignedDocument, pubkey_to_account, Document};
 use crate::state::{increment_count, INTERNAL_SECRET, get_seed, CHANNELS, store_seed, get_count};
+
+pub const DATA_LEN: usize = 256;
 
 #[entry_point]
 pub fn instantiate(
@@ -69,6 +73,12 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
     }
 }
 
+/// 
+/// Execute Tx message
+/// 
+///   This sample transaction increments the sender's counter for a specified channel,
+///   and issues a new encrypted notification that will be pushed to client applications.
+/// 
 fn try_tx(
     deps: DepsMut,
     sender: &Addr,
@@ -77,12 +87,21 @@ fn try_tx(
     let sender_raw = deps.api.addr_canonicalize(sender.as_str())?;
     let count = increment_count(deps.storage, &channel, &sender_raw)?;
 
+    // use CBOR to encode data
+    let data = cbor::to_vec(
+        &TxChannelData { 
+            message: format!("You have a new message on channel {}, count {}", channel, count)
+        }
+    ).map_err(|e| 
+        StdError::generic_err(format!("{:?}", e))
+    )?;
+
     let id = notification_id(deps.storage, &sender_raw, &channel)?;
-    let data = encrypt_notification_data(
+    let encrypted_data = encrypt_notification_data(
         deps.storage,
         &sender_raw,
         &channel,
-        format!("You have a new event {} on channel {}!", count, channel).as_str()
+        data
     )?;
 
     Ok(Response::new()
@@ -91,11 +110,25 @@ fn try_tx(
         )
         .add_attribute_plaintext(
             format!("wasm.{}", id.to_base64()), 
-            data.to_base64()
+            encrypted_data.to_base64()
         )
     )
 }
 
+/// 
+/// Execute UpdateSeed message
+/// 
+///   Allows clients to set a new shared secret. In order to guarantee the provided 
+///   secret has high entropy, clients must submit a signed document params and signature 
+///   to be verified before the new shared secret (i.e., the signature) is accepted.
+/// 
+///   Updates the sender's seed with the signature of the `signed_doc`. The signed doc
+///   is validated to make sure:
+///   - the signature is verified, 
+///   - that the sender was the signer of the doc, 
+///   - the `contract` field matches the address of this contract
+///   - the `previous_seed` field matches the previous seed stored in the contract
+/// 
 pub fn try_update_seed(
     deps: DepsMut,
     env: Env,
@@ -128,6 +161,11 @@ pub fn try_update_seed(
     })?))
 }
 
+/// 
+/// Execute SetViewingKey
+/// 
+///   Sets the viewing key for the sender
+/// 
 fn try_set_viewing_key(
     deps: DepsMut,
     sender: &Addr,
@@ -145,6 +183,11 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     }
 }
 
+///
+/// ListChannels query
+/// 
+///   Public query to list all notification channels.
+/// 
 fn query_list_channels(deps: Deps) -> StdResult<Binary> {
     let channels: Vec<String> = CHANNELS
         .iter(deps.storage)?
@@ -153,6 +196,12 @@ fn query_list_channels(deps: Deps) -> StdResult<Binary> {
     to_binary(&QueryAnswer::ListChannels { channels })
 }
 
+///
+/// ChannelInfo query
+/// 
+///   Authenticated query allows clients to obtain the seed, counter, 
+///   and Notification ID of a future event, for a specific channel.
+/// 
 fn query_channel_info(
     deps: Deps,
     env: Env,
@@ -175,6 +224,12 @@ fn query_channel_info(
     })
 }
 
+///
+/// fn validate_signed_doc
+/// 
+///   Validates a signed doc to verify the signature is correct. Returns the account
+///   derived from the public key.
+/// 
 fn validate_signed_doc(
     api: &dyn Api,
     signed_doc: &SignedDocument,
@@ -207,6 +262,13 @@ fn validate_signed_doc(
     Ok(account)
 }
 
+/// 
+/// fn notification_id
+/// 
+///   Returns a notification id for the given address and channel id.
+/// 
+/// pseudocode:
+/// 
 /// fun notificationIDFor(contractOrRecipientAddr, channelId) {
 ///    // counter reflects the nth notification for the given contract/recipient in the given channel
 ///    let counter := getCounterFor(contractOrRecipientAddr, channelId)
@@ -218,6 +280,7 @@ fn validate_signed_doc(
 ///
 ///    return notificationID
 ///  }
+/// 
 fn notification_id(
     storage: &dyn Storage,
     addr: &CanonicalAddr,
@@ -240,30 +303,47 @@ fn notification_id(
     Ok(Binary::from(code_bytes.as_slice()))
 }
 
+/// 
+/// fn encrypt_notification_data
+/// 
+///   Returns encrypted bytes given plaintext bytes, address, and channel id.
+/// 
+/// pseudocode:
+/// 
 /// fun encryptNotificationData(recipientAddr, channelId, plaintext) {
 ///   // counter reflects the nth notification for the given recipient in the given channel
 ///   let counter := getCounterFor(recipientAddr, channelId)
 ///
-///   // encrypt notification data for this event
 ///   let seed := getSeedFor(recipientAddr)
-///   let notificationData := chacha20poly1305_encrypt(key=seed, nonce=counter, message=pad(plaintext, DATA_LEN))
 ///
-///   return notificationData
+///   // ChaCha20 expects a 96-bit (12 bytes) nonce. encode uint64 counter using BE and left-pad with 4 bytes of 0x00
+///   let nonce := concat(zeros(4), uint64BigEndian(counter))
+///
+///   // right-pad the plaintext with 0x00 bytes until it is of the desired length
+///   let message := concat(plaintext, zeros(DATA_LEN - len(plaintext)))
+///
+///   // encrypt notification data for this event
+///   let ciphertext := chacha20poly1305_encrypt(key=seed, nonce=nonce, message=message)
+///
+///   return ciphertext
 /// }
+/// 
 fn encrypt_notification_data(
     storage: &dyn Storage,
     addr: &CanonicalAddr,
     channel: &String,
-    plaintext: &str,
+    plaintext: Vec<u8>,
 ) -> StdResult<Binary> {
     let counter = get_count(storage, channel, addr);
+    let mut padded_plaintext = plaintext;
+    space_pad(&mut padded_plaintext, DATA_LEN);
 
     // encrypt notification data for this event
     let seed = get_seed(storage, addr)?;
     let cipher_text = cipher_data(
         seed.0.as_slice(),
-        counter.to_be_bytes().as_slice(),
-        plaintext
+        [&[0_u8, 0_u8, 0_u8, 0_u8], counter.to_be_bytes().as_slice()].concat().as_slice(),
+        padded_plaintext.as_slice()
     )?;
 
     Ok(Binary::from(cipher_text))

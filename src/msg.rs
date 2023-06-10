@@ -49,8 +49,13 @@ pub enum ExecuteAnswer {
     },
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub struct TxChannelData {
+    pub message: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub enum QueryMsg {
     /// Public query to list all notification channels
     ListChannels {},
