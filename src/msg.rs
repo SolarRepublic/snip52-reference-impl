@@ -5,7 +5,6 @@ use crate::signed_doc::{SignedDocument};
 
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
-    pub channels: Vec<String>, 
     pub entropy: String,
 }
 
@@ -49,12 +48,6 @@ pub enum ExecuteAnswer {
     },
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct TxChannelData {
-    pub message: String,
-}
-
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 pub enum QueryMsg {
     /// Public query to list all notification channels
@@ -74,11 +67,18 @@ pub enum QueryAnswer {
         channels: Vec<String>,
     },
     ChannelInfo {
+        /// same as query input
         channel: String,
+        /// shared secret in base64
         seed: Binary,
+        /// current counter value
         counter: Uint64,
+        /// the next Notification ID
         next_id: Binary,
+        /// scopes validity of this response
         as_of_block: Uint64,
+        /// optional CDDL schema definition string for the CBOR-encoded notification data
+        cddl: Option<String>,
     },
 }
 

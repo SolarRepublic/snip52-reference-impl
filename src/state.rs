@@ -1,12 +1,11 @@
 use base64::{engine::general_purpose, Engine as _};
 use hkdf::Hkdf;
 use sha2::Sha256;
-use secret_toolkit::{storage::{Keymap, Item, Keyset}};
+use secret_toolkit::{storage::{Keymap, Item}};
 
 use cosmwasm_std::{CanonicalAddr, Storage, StdResult, StdError, Binary};
 
 pub static INTERNAL_SECRET: Item<Vec<u8>> = Item::new(b"secret");
-pub static CHANNELS: Keyset<String> = Keyset::new(b"channels");
 pub static COUNTERS: Keymap<CanonicalAddr,u64> = Keymap::new(b"counters");
 pub static SEEDS: Keymap<CanonicalAddr,Vec<u8>> = Keymap::new(b"seeds");
 
@@ -94,11 +93,7 @@ mod tests {
             deps.as_mut(), 
             env, 
             info, 
-            InstantiateMsg { 
-                channels: vec![ 
-                    "channel1".to_string(),
-                    "channel2".to_string(),
-                ],
+            InstantiateMsg {
                 entropy: "entropy 12345".to_string(),
             });
 

@@ -15,11 +15,15 @@ pub fn cipher_data(
     nonce: &[u8],
     plaintext: &[u8], 
 ) -> StdResult<Vec<u8>> {
-    let cipher = ChaCha20Poly1305::new_from_slice(key).map_err(|e|
-        StdError::generic_err(format!("{:?}", e))
+    let cipher = ChaCha20Poly1305::new_from_slice(key)
+        .map_err(|e|
+            StdError::generic_err(format!("{:?}", e)
+        )
     )?;
     let ciphertext = cipher
         .encrypt(GenericArray::from_slice(nonce), plaintext)
-        .map_err(|e| StdError::generic_err(format!("{:?}", e)))?;
+        .map_err(|e| 
+            StdError::generic_err(format!("{:?}", e))
+        )?;
     Ok(ciphertext)
 }

@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use bech32::{ToBase32,Variant};
 use cosmwasm_std::{
     entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Addr, StdError, Api, CanonicalAddr, Storage, Uint64,
@@ -10,10 +9,10 @@ use secret_toolkit::viewing_key::{ViewingKey, ViewingKeyStore};
 use base64::{engine::general_purpose, Engine as _};
 use hkdf::hmac::{Mac};
 use crate::crypto::{HmacSha256, cipher_data};
-use crate::msg::TxChannelData;
+use crate::channel::{Channel, TxChannelData, TX_CHANNEL_SCHEMA, CHANNEL_SCHEMATA, CHANNELS};
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, QueryAnswer, ViewerInfo, ExecuteAnswer, ResponseStatus::Success};
 use crate::signed_doc::{SignedDocument, pubkey_to_account, Document};
-use crate::state::{increment_count, INTERNAL_SECRET, get_seed, CHANNELS, store_seed, get_count};
+use crate::state::{increment_count, INTERNAL_SECRET, get_seed, store_seed, get_count};
 
 pub const DATA_LEN: usize = 256;
 
@@ -24,6 +23,7 @@ pub fn instantiate(
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> StdResult<Response> {
+    // use entropy and contract prng to create an internal secret for the contract
     let entropy = msg.entropy.as_bytes();
     let entropy_len = 16 + info.sender.to_string().len() + entropy.len();
     let mut rng_entropy = Vec::with_capacity(entropy_len);
@@ -37,17 +37,18 @@ pub fn instantiate(
     let key = sha_256(&rand_slice);
     INTERNAL_SECRET.save(deps.storage, &general_purpose::STANDARD.encode(key).as_bytes().to_vec())?;
 
-    if msg.channels.len() == 0 {
-        return Err(StdError::generic_err("No channel ids"))
-    }
+    // Channels will generally be hard-coded in contracts
+    let channels: Vec<Channel> = vec![
+        Channel {
+            id: "tx".to_string(),
+            schema: Some(TX_CHANNEL_SCHEMA.to_string()),
+        },
+        // ...
+    ];
 
-    msg.channels
-        .into_iter()
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .for_each(|channel| {
-            CHANNELS.insert(deps.storage, &channel).unwrap();
-        });
+    channels.into_iter().for_each(|channel| {
+        channel.store(deps.storage).unwrap()
+    });
 
     let prng_seed = sha_256(
         general_purpose::STANDARD
@@ -89,12 +90,16 @@ fn try_tx(
 
     // use CBOR to encode data
     let data = cbor::to_vec(
-        &TxChannelData { 
-            message: format!("You have a new message on channel {}, count {}", channel, count)
+        &TxChannelData {
+            sender: sender_raw.clone(),
+            counter: count,
+            message: format!("You have a new message on channel '{}'", channel)
         }
     ).map_err(|e| 
         StdError::generic_err(format!("{:?}", e))
     )?;
+
+
 
     let id = notification_id(deps.storage, &sender_raw, &channel)?;
     let encrypted_data = encrypt_notification_data(
@@ -214,6 +219,7 @@ fn query_channel_info(
 
     let next_id = notification_id(deps.storage, &sender_raw, &channel)?;
     let counter = Uint64::from(get_count(deps.storage, &channel, &sender_raw));
+    let schema = CHANNEL_SCHEMATA.get(deps.storage, &channel);
 
     to_binary(&QueryAnswer::ChannelInfo { 
         channel,
@@ -221,6 +227,7 @@ fn query_channel_info(
         counter, 
         next_id, 
         as_of_block: Uint64::from(env.block.height),
+        cddl: schema,
     })
 }
 
@@ -366,10 +373,6 @@ mod tests {
             }],
         );
         let init_msg = InstantiateMsg {
-            channels: vec![
-                "channel1".to_string(),
-                "channel2".to_string(),
-            ],
             entropy: "secret sauce".to_string(),
         };
 
@@ -391,10 +394,6 @@ mod tests {
             env, 
             info, 
             InstantiateMsg { 
-                channels: vec![ 
-                    "channel1".to_string(),
-                    "channel2".to_string(),
-                ],
                 entropy: "entropy 12345".to_string(),
             });
 
