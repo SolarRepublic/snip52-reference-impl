@@ -46,4 +46,4 @@ pub static TX_CHANNEL_SCHEMA: &str = r#"tx = {
     sender: bstr,
     counter: uint,
     message: tstr,
-  }"#;
+}"#;
