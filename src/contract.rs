@@ -106,7 +106,7 @@ fn try_tx(
     let data = cbor::to_vec(
         &TxChannelData {
             sender: sender_raw.clone(),
-            counter: count,
+            counter: get_count(deps.storage, &channel, &sender_raw),
             message: format!("You have a new message on channel '{}'", channel)
         }
     ).map_err(|e| 
@@ -121,7 +121,7 @@ fn try_tx(
         data
     )?;
 
-    let count = increment_count(deps.storage, &channel, &sender_raw)?;
+    increment_count(deps.storage, &channel, &sender_raw)?;
 
     Ok(Response::new()
         .set_data(
