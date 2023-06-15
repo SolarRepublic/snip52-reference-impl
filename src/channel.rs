@@ -37,9 +37,8 @@ impl Channel {
 #[serde(rename_all = "snake_case")]
 pub struct TxChannelData {
     pub sender: CanonicalAddr,
-    pub counter: u64,
     pub message: String,
 }
 
 /// Example CDDL Schema for TxChannelData
-pub static TX_CHANNEL_SCHEMA: &str = r#"tx={sender: bstr,counter: uint,message: tstr}"#;
+pub static TX_CHANNEL_SCHEMA: &str = r#"tx={sender: bstr,message: tstr}"#;
