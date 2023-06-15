@@ -74,10 +74,10 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
             &info.sender, 
             signed_doc
         ),
-        ExecuteMsg::SetViewingKey { viewing_key, .. } => try_set_viewing_key(
+        ExecuteMsg::SetViewingKey { key, .. } => try_set_viewing_key(
             deps, 
             &info.sender, 
-            viewing_key
+            key
         ),
     }
 }

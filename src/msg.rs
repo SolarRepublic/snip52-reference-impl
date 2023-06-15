@@ -28,7 +28,7 @@ pub enum ExecuteMsg {
     /// set viewing key
     SetViewingKey {
         /// viewing key
-        viewing_key: String,
+        key: String,
         /// optional message length padding
         padding: Option<String>,
     },
