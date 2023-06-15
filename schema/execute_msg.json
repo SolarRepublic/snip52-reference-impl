@@ -74,7 +74,7 @@
         "set_viewing_key": {
           "type": "object",
           "required": [
-            "viewing_key"
+            "key"
           ],
           "properties": {
             "padding": {
@@ -84,7 +84,7 @@
                 "null"
               ]
             },
-            "viewing_key": {
+            "key": {
               "description": "viewing key",
               "type": "string"
             }
