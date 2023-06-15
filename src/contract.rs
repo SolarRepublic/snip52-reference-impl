@@ -286,16 +286,16 @@ fn validate_signed_doc(
 /// pseudocode:
 /// 
 /// fun notificationIDFor(contractOrRecipientAddr, channelId) {
-///    // counter reflects the nth notification for the given contract/recipient in the given channel
-///    let counter := getCounterFor(contractOrRecipientAddr, channelId)
+///   // counter reflects the nth notification for the given contract/recipient in the given channel
+///   let counter := getCounterFor(contractOrRecipientAddr, channelId)
 ///
-///    // compute notification ID for this event
-///    let seed := getSeedFor(contractOrRecipientAddr)
-///    let material := concat(channelId, ":", counter)
-///    let notificationID := hmac_sha256(key=seed, message=material)
+///   // compute notification ID for this event
+///   let seed := getSeedFor(contractOrRecipientAddr)
+///   let material := concatStrings(channelId, ":", uintToDecimalString(counter))
+///   let notificationID := hmac_sha256(key=seed, message=utf8ToBytes(material))
 ///
-///    return notificationID
-///  }
+///   return notificationID
+/// }
 /// 
 fn notification_id(
     storage: &dyn Storage,
@@ -309,7 +309,7 @@ fn notification_id(
     let material = [
         channel.as_bytes(),
         ":".as_bytes(),
-        &counter.to_be_bytes()
+        counter.to_string().as_bytes()
     ].concat();
 
     let mut mac: HmacSha256 = HmacSha256::new_from_slice(seed.0.as_slice()).unwrap();
