@@ -1,8 +1,9 @@
 use cosmwasm_std::{Binary, Uint128, CanonicalAddr};
 use schemars::JsonSchema;
-use secret_toolkit::crypto::sha_256;
 use serde::{Serialize, Deserialize};
 use ripemd::{Digest, Ripemd160};
+
+use crate::crypto::sha_256;
 
 /// Document
 /// Note: The order of fields in this struct is important for the document signature verification!

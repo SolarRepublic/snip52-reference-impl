@@ -49,6 +49,7 @@ pub enum ExecuteAnswer {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     /// Public query to list all notification channels
     ListChannels {},

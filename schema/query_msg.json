@@ -1,17 +1,64 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "QueryMsg",
-  "anyOf": [
+  "oneOf": [
     {
+      "description": "Public query to list all notification channels",
       "type": "object",
       "required": [
-        "get_count"
+        "ListChannels"
       ],
       "properties": {
-        "get_count": {
+        "ListChannels": {
           "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Authenticated query allows clients to obtain the seed, counter, and Notification ID of a future event, for a specific channel.",
+      "type": "object",
+      "required": [
+        "ChannelInfo"
+      ],
+      "properties": {
+        "ChannelInfo": {
+          "type": "object",
+          "required": [
+            "channel",
+            "viewer"
+          ],
+          "properties": {
+            "channel": {
+              "type": "string"
+            },
+            "viewer": {
+              "$ref": "#/definitions/ViewerInfo"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  ],
+  "definitions": {
+    "ViewerInfo": {
+      "description": "the address and viewing key making an authenticated query request",
+      "type": "object",
+      "required": [
+        "address",
+        "viewing_key"
+      ],
+      "properties": {
+        "address": {
+          "description": "querying address",
+          "type": "string"
+        },
+        "viewing_key": {
+          "description": "authentication key string",
+          "type": "string"
         }
       }
     }
-  ]
+  }
 }

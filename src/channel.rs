@@ -1,5 +1,5 @@
 use cosmwasm_std::{Storage, StdResult, CanonicalAddr};
-use secret_toolkit::storage::{Keyset, Keymap};
+use secret_toolkit_storage::{Keyset, Keymap};
 use serde::{Serialize, Deserialize};
 
 pub static CHANNELS: Keyset<String> = Keyset::new(b"channel-ids");

@@ -3,16 +3,15 @@ use cosmwasm_std::{
     entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Addr, StdError, Api, CanonicalAddr, Storage, Uint64,
 };
 use minicbor_ser as cbor;
-use secret_toolkit::crypto::{ContractPrng, sha_256};
-use secret_toolkit::utils::space_pad;
-use secret_toolkit::viewing_key::{ViewingKey, ViewingKeyStore};
 use base64::{engine::general_purpose, Engine as _};
 use hkdf::hmac::{Mac};
-use crate::crypto::{HmacSha256, cipher_data};
+use crate::crypto::{HmacSha256, sha_256, cipher_data}; //cipher_data, sha_256};
 use crate::channel::{Channel, TxChannelData, TX_CHANNEL_SCHEMA, CHANNEL_SCHEMATA, CHANNELS};
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, QueryAnswer, ViewerInfo, ExecuteAnswer, ResponseStatus::Success};
+use crate::rng::ContractPrng;
 use crate::signed_doc::{SignedDocument, pubkey_to_account, Document};
 use crate::state::{increment_count, INTERNAL_SECRET, get_seed, store_seed, get_count};
+use crate::vk::{ViewingKey, ViewingKeyStore};
 
 pub const DATA_LEN: usize = 256;
 
@@ -63,14 +62,23 @@ pub fn instantiate(
 #[entry_point]
 pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> StdResult<Response> {
     match msg {
-        ExecuteMsg::Tx { channel, .. } => try_tx(deps, &info.sender, channel),
+        ExecuteMsg::Tx { channel, .. } => try_tx(
+            deps, 
+            &env, 
+            &info.sender, 
+            channel
+        ),
         ExecuteMsg::UpdateSeed { signed_doc, .. } => try_update_seed(
             deps,
             env,
             &info.sender, 
             signed_doc
         ),
-        ExecuteMsg::SetViewingKey { viewing_key, .. } => try_set_viewing_key(deps, &info.sender, viewing_key),
+        ExecuteMsg::SetViewingKey { viewing_key, .. } => try_set_viewing_key(
+            deps, 
+            &info.sender, 
+            viewing_key
+        ),
     }
 }
 
@@ -82,6 +90,7 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
 /// 
 fn try_tx(
     deps: DepsMut,
+    env: &Env,
     sender: &Addr,
     channel: String,
 ) -> StdResult<Response> {
@@ -99,11 +108,11 @@ fn try_tx(
         StdError::generic_err(format!("{:?}", e))
     )?;
 
-
-
     let id = notification_id(deps.storage, &sender_raw, &channel)?;
+ 
     let encrypted_data = encrypt_notification_data(
         deps.storage,
+        &env,
         &sender_raw,
         &channel,
         data
@@ -317,7 +326,7 @@ fn notification_id(
 /// 
 /// pseudocode:
 /// 
-/// fun encryptNotificationData(recipientAddr, channelId, plaintext) {
+/// fun encryptNotificationData(recipientAddr, channelId, plaintext, env) {
 ///   // counter reflects the nth notification for the given recipient in the given channel
 ///   let counter := getCounterFor(recipientAddr, channelId)
 ///
@@ -326,34 +335,69 @@ fn notification_id(
 ///   // ChaCha20 expects a 96-bit (12 bytes) nonce. encode uint64 counter using BE and left-pad with 4 bytes of 0x00
 ///   let nonce := concat(zeros(4), uint64BigEndian(counter))
 ///
-///   // right-pad the plaintext with 0x00 bytes until it is of the desired length
+///   // right-pad the plaintext with 0x00 bytes until it is of the desired length (keep in mind, payload adds 16 bytes for tag)
 ///   let message := concat(plaintext, zeros(DATA_LEN - len(plaintext)))
 ///
-///   // encrypt notification data for this event
-///   let ciphertext := chacha20poly1305_encrypt(key=seed, nonce=nonce, message=message)
+///   // construct the additional authenticated data
+///   let aad := concatStrings(env.blockHeight, ":", env.txIndex)
 ///
-///   return ciphertext
+///   // encrypt notification data for this event
+///   let [ciphertext, tag] := chacha20poly1305_encrypt(key=seed, nonce=nonce, message=message, aad=aad)
+///
+///   // concatenate 16 bytes of tag with variable-width ciphertext
+///   let payload := concat(tag, ciphertext)
+///
+///   return payload
 /// }
 /// 
+
 fn encrypt_notification_data(
     storage: &dyn Storage,
+    env: &Env,
     addr: &CanonicalAddr,
     channel: &String,
     plaintext: Vec<u8>,
 ) -> StdResult<Binary> {
     let counter = get_count(storage, channel, addr);
     let mut padded_plaintext = plaintext;
-    space_pad(&mut padded_plaintext, DATA_LEN);
+    zero_pad(&mut padded_plaintext, DATA_LEN);
+
+    let seed = get_seed(storage, addr)?;
+    let nonce = [&[0_u8, 0_u8, 0_u8, 0_u8], counter.to_be_bytes().as_slice()].concat();
+
+    let tx_index: u32;
+    if let Some(transaction) = &env.transaction {
+        tx_index = transaction.index;
+    } else {
+        return Err(StdError::generic_err("Cannot encrypt notification data outside of a transaction"));
+    }
+    
+    let aad = format!("{}:{}", env.block.height, tx_index);
 
     // encrypt notification data for this event
-    let seed = get_seed(storage, addr)?;
-    let cipher_text = cipher_data(
+    let tag_ciphertext = cipher_data(
         seed.0.as_slice(),
-        [&[0_u8, 0_u8, 0_u8, 0_u8], counter.to_be_bytes().as_slice()].concat().as_slice(),
-        padded_plaintext.as_slice()
+        nonce.as_slice(),
+        padded_plaintext.as_slice(),
+        aad.as_bytes()
     )?;
 
-    Ok(Binary::from(cipher_text))
+    Ok(Binary::from(tag_ciphertext))
+}
+
+
+/// Take a Vec<u8> and pad it up to a multiple of `block_size`, using 0x00 at the end.
+fn zero_pad(message: &mut Vec<u8>, block_size: usize) -> &mut Vec<u8> {
+    let len = message.len();
+    let surplus = len % block_size;
+    if surplus == 0 {
+        return message;
+    }
+
+    let missing = block_size - surplus;
+    message.reserve(missing);
+    message.extend(std::iter::repeat(0x00).take(missing));
+    message
 }
 
 #[cfg(test)]

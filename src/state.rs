@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose, Engine as _};
 use hkdf::Hkdf;
 use sha2::Sha256;
-use secret_toolkit::{storage::{Keymap, Item}};
+use secret_toolkit_storage::{Keymap, Item};
 
 use cosmwasm_std::{CanonicalAddr, Storage, StdResult, StdError, Binary};
 
