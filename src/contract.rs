@@ -99,6 +99,9 @@ fn try_tx(
     channel: String,
 ) -> StdResult<Response> {
     let sender_raw = deps.api.addr_canonicalize(sender.as_str())?;
+
+    let id = notification_id(deps.storage, &sender_raw, &channel)?;
+
     let count = increment_count(deps.storage, &channel, &sender_raw)?;
 
     // use CBOR to encode data
@@ -111,8 +114,6 @@ fn try_tx(
     ).map_err(|e| 
         StdError::generic_err(format!("{:?}", e))
     )?;
-
-    let id = notification_id(deps.storage, &sender_raw, &channel)?;
  
     let encrypted_data = encrypt_notification_data(
         deps.storage,
@@ -127,7 +128,7 @@ fn try_tx(
             to_binary(&ExecuteAnswer::Tx { response: Success })?
         )
         .add_attribute_plaintext(
-            format!("wasm.{}", id.to_base64()), 
+            id.to_base64(), 
             encrypted_data.to_base64()
         )
     )
