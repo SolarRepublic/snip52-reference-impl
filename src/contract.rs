@@ -102,13 +102,11 @@ fn try_tx(
 
     let id = notification_id(deps.storage, &sender_raw, &channel)?;
 
-    let count = increment_count(deps.storage, &channel, &sender_raw)?;
-
     // use CBOR to encode data
     let data = cbor::to_vec(
         &TxChannelData {
             sender: sender_raw.clone(),
-            counter: count,
+            counter: get_count(deps.storage, &channel, &sender_raw),
             message: format!("You have a new message on channel '{}'", channel)
         }
     ).map_err(|e| 
@@ -122,6 +120,8 @@ fn try_tx(
         &channel,
         data
     )?;
+
+    increment_count(deps.storage, &channel, &sender_raw)?;
 
     Ok(Response::new()
         .set_data(
