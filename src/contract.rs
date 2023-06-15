@@ -89,8 +89,25 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
 /// 
 /// Execute Tx message
 /// 
-///   This sample transaction increments the sender's counter for a specified channel,
-///   and issues a new encrypted notification that will be pushed to client applications.
+///   This sample transaction issues a new encrypted notification that will be 
+///   pushed to client applications and increments the sender's counter for a 
+///   specified channel.
+/// 
+///   Pseudocode for dispatching a notification
+/// 
+///   fun dispatchNotification(recipientAddr, channelId, plaintext, env) {
+///     // obtain the current notification ID
+///     let notificationId := notificationIDFor(recipientAddr, channelId)
+///
+///     // construct the notification data payload
+///     let payload := encryptNotificationData(recipientAddr, channelId, plaintext, env);
+///
+///     // increment the counter
+///     incrementCounterFor(contractAddr, channelId)
+///
+///     // emit the notification
+///     addAttributeToEventLog(notificationId, payload)
+///   }
 /// 
 fn try_tx(
     deps: DepsMut,
