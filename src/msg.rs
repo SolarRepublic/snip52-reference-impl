@@ -1,5 +1,6 @@
 use cosmwasm_std::{Uint64, Binary};
 use schemars::JsonSchema;
+use secret_toolkit::permit::Permit;
 use serde::{Deserialize, Serialize};
 use crate::signed_doc::{SignedDocument};
 
@@ -32,6 +33,11 @@ pub enum ExecuteMsg {
         /// optional message length padding
         padding: Option<String>,
     },
+    /// Revoke a permit
+    RevokePermit {
+        permit_name: String,
+        padding: Option<String>,
+    },
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug)]
@@ -46,9 +52,12 @@ pub enum ExecuteAnswer {
     SetViewingKey {
         response: ResponseStatus,
     },
+    RevokePermit {
+        response: ResponseStatus,
+    },
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     /// Public query to list all notification channels
@@ -58,6 +67,19 @@ pub enum QueryMsg {
     ChannelInfo {
         channel: String,
         viewer: ViewerInfo,
+    },
+    /// Authenticated queries with permits
+    WithPermit {
+        permit: Permit,
+        query: QueryWithPermit,
+    },
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum QueryWithPermit {
+    ChannelInfo {
+        channel: String,
     },
 }
 

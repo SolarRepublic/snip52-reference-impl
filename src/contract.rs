@@ -5,15 +5,18 @@ use cosmwasm_std::{
 use minicbor_ser as cbor;
 use base64::{engine::general_purpose, Engine as _};
 use hkdf::hmac::{Mac};
+use secret_toolkit::permit::{RevokedPermits, Permit,};
 use crate::crypto::{HmacSha256, sha_256, cipher_data}; //cipher_data, sha_256};
 use crate::channel::{Channel, TxChannelData, TX_CHANNEL_SCHEMA, CHANNEL_SCHEMATA, CHANNELS};
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, QueryAnswer, ViewerInfo, ExecuteAnswer, ResponseStatus::Success};
+use crate::msg::QueryWithPermit;
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, QueryAnswer, ExecuteAnswer, ResponseStatus::Success};
 use crate::rng::ContractPrng;
 use crate::signed_doc::{SignedDocument, pubkey_to_account, Document};
 use crate::state::{increment_count, INTERNAL_SECRET, get_seed, store_seed, get_count};
 use crate::vk::{ViewingKey, ViewingKeyStore};
 
 pub const DATA_LEN: usize = 256;
+pub const PREFIX_REVOKED_PERMITS: &str = "revoked_permits";
 
 #[entry_point]
 pub fn instantiate(
@@ -79,6 +82,7 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
             &info.sender, 
             key
         ),
+        ExecuteMsg::RevokePermit { permit_name, .. } => revoke_permit(deps, info, permit_name),
     }
 }
 
@@ -189,13 +193,56 @@ fn try_set_viewing_key(
     Ok(Response::new().set_data(to_binary(&ExecuteAnswer::SetViewingKey { response: Success })?))
 }
 
+fn revoke_permit(deps: DepsMut, info: MessageInfo, permit_name: String) -> StdResult<Response> {
+    RevokedPermits::revoke_permit(
+        deps.storage,
+        PREFIX_REVOKED_PERMITS,
+        info.sender.as_str(),
+        &permit_name,
+    );
+
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::RevokePermit { response: Success })?))
+}
+
 #[entry_point]
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::ListChannels{} => query_list_channels(deps),
-        QueryMsg::ChannelInfo { channel, viewer } => query_channel_info(deps, env, channel, viewer),
+        QueryMsg::ChannelInfo { channel, viewer } => {
+            // make sure the viewing key is valid
+            ViewingKey::check(deps.storage, &viewer.address, &viewer.viewing_key)?;
+            let sender_raw = deps.api.addr_canonicalize(viewer.address.as_str())?;
+            query_channel_info(deps, &env, channel, sender_raw)
+        },
+        QueryMsg::WithPermit { permit, query } => permit_queries(deps, &env, permit, query),
     }
 }
+
+fn permit_queries(deps: Deps, env: &Env, permit: Permit, query: QueryWithPermit) -> Result<Binary, StdError> {
+    let contract_address = env.contract.address.clone();
+    // Validate permit content
+    let account = secret_toolkit::permit::validate(
+        deps,
+        PREFIX_REVOKED_PERMITS,
+        &permit,
+        contract_address.into_string(),
+        None,
+    )?;
+
+    if !permit.check_permission(&secret_toolkit::permit::TokenPermissions::Owner) {
+        return Err(StdError::generic_err(format!(
+            "Owner permission is required for queries, got permissions {:?}",
+            permit.params.permissions
+        )));
+    }
+
+    let account_raw = deps.api.addr_canonicalize(account.as_str())?;
+
+    match query {
+        QueryWithPermit::ChannelInfo { channel } => query_channel_info(deps, &env, channel, account_raw)
+    }
+}
+
 
 ///
 /// ListChannels query
@@ -218,14 +265,10 @@ fn query_list_channels(deps: Deps) -> StdResult<Binary> {
 /// 
 fn query_channel_info(
     deps: Deps,
-    env: Env,
+    env: &Env,
     channel: String,
-    viewer: ViewerInfo,
+    sender_raw: CanonicalAddr,
 ) -> StdResult<Binary> {
-    // make sure the viewing key is valid
-    ViewingKey::check(deps.storage, &viewer.address, &viewer.viewing_key)?;
-    let sender_raw = deps.api.addr_canonicalize(viewer.address.as_str())?;
-
     let next_id = notification_id(deps.storage, &sender_raw, &channel)?;
     let counter = Uint64::from(get_count(deps.storage, &channel, &sender_raw));
     let schema = CHANNEL_SCHEMATA.get(deps.storage, &channel);
