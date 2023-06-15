@@ -102,8 +102,6 @@ fn try_tx(
 
     let id = notification_id(deps.storage, &sender_raw, &channel)?;
 
-    let count = increment_count(deps.storage, &channel, &sender_raw)?;
-
     // use CBOR to encode data
     let data = cbor::to_vec(
         &TxChannelData {
@@ -122,6 +120,8 @@ fn try_tx(
         &channel,
         data
     )?;
+
+    let count = increment_count(deps.storage, &channel, &sender_raw)?;
 
     Ok(Response::new()
         .set_data(
