@@ -42,8 +42,4 @@ pub struct TxChannelData {
 }
 
 /// Example CDDL Schema for TxChannelData
-pub static TX_CHANNEL_SCHEMA: &str = r#"tx = {
-    sender: bstr,
-    counter: uint,
-    message: tstr,
-}"#;
+pub static TX_CHANNEL_SCHEMA: &str = r#"tx={sender: bstr,counter: uint,message: tstr}"#;
