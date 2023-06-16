@@ -399,7 +399,7 @@ fn notification_id(
 ///   let message := concat(plaintext, zeros(DATA_LEN - len(plaintext)))
 ///
 ///   // construct the additional authenticated data
-///   let aad := concatStrings(env.blockHeight, ":", env.txIndex)
+///   let aad := concatStrings(env.blockHeight, ":", env.senderAddress)
 ///
 ///   // encrypt notification data for this event
 ///   let [ciphertext, tag] := chacha20poly1305_encrypt(key=seed, nonce=nonce, message=message, aad=aad)
@@ -425,14 +425,7 @@ fn encrypt_notification_data(
     let seed = get_seed(storage, addr)?;
     let nonce = [&[0_u8, 0_u8, 0_u8, 0_u8], counter.to_be_bytes().as_slice()].concat();
 
-    let tx_index: u32;
-    if let Some(transaction) = &env.transaction {
-        tx_index = transaction.index;
-    } else {
-        return Err(StdError::generic_err("Cannot encrypt notification data outside of a transaction"));
-    }
-    
-    let aad = format!("{}:{}", env.block.height, tx_index);
+    let aad = format!("{}:{}", env.block.height, env.message.sender.as_str());
 
     // encrypt notification data for this event
     let tag_ciphertext = cipher_data(
