@@ -48,6 +48,8 @@ pub fn instantiate(
         // ...
     ];
 
+    deps.api.debug("woohoo");
+
     channels.into_iter().for_each(|channel| {
         channel.store(deps.storage).unwrap()
     });
@@ -117,6 +119,8 @@ fn try_tx(
 ) -> StdResult<Response> {
     let sender_raw = deps.api.addr_canonicalize(sender.as_str())?;
 
+    // counter, padded_plaintext, seed, nonce, aad, and tag_ciphertext
+
     let id = notification_id(deps.storage, &sender_raw, &channel)?;
 
     // use CBOR to encode data
@@ -129,20 +133,38 @@ fn try_tx(
         StdError::generic_err(format!("{:?}", e))
     )?;
  
-    let encrypted_data = encrypt_notification_data(
+    let (
+        encrypted_data, 
+        out_counter, 
+        out_plaintext, 
+        out_padded_plaintext, 
+        out_seed, 
+        out_nonce, 
+        out_aad, 
+        out_tag_ciphertext
+    )  = encrypt_notification_data(
         deps.storage,
         deps.api,
         &env,
         &sender_raw,
         &channel,
-        data
+        data.clone()
     )?;
 
     increment_count(deps.storage, &channel, &sender_raw)?;
 
     Ok(Response::new()
         .set_data(
-            to_binary(&ExecuteAnswer::Tx { response: Success })?
+            to_binary(&ExecuteAnswer::Tx { 
+                response: Success,
+                counter: Uint64::from(out_counter),
+                plaintext: out_plaintext,
+                padded_plaintext: out_padded_plaintext,
+                seed: out_seed,
+                nonce: out_nonce,
+                aad: out_aad,
+                tag_ciphertext: out_tag_ciphertext,
+            })?
         )
         .add_attribute_plaintext(
             id.to_base64(), 
@@ -419,9 +441,9 @@ fn encrypt_notification_data(
     addr: &CanonicalAddr,
     channel: &String,
     plaintext: Vec<u8>,
-) -> StdResult<Binary> {
+) -> StdResult<(Binary, u64, Binary, Binary, Binary, Binary, Binary, Binary)> {
     let counter = get_count(storage, channel, addr);
-    let mut padded_plaintext = plaintext;
+    let mut padded_plaintext = plaintext.clone();
     zero_pad(&mut padded_plaintext, DATA_LEN);
 
     let seed = get_seed(storage, addr)?;
@@ -437,7 +459,16 @@ fn encrypt_notification_data(
         aad.as_bytes()
     )?;
 
-    Ok(Binary::from(tag_ciphertext))
+    Ok((
+        Binary::from(tag_ciphertext.clone()),
+        counter,
+        to_binary(&plaintext)?,
+        to_binary(&padded_plaintext)?,
+        to_binary(seed.0.as_slice())?,
+        to_binary(nonce.as_slice())?,
+        to_binary(aad.as_bytes())?,
+        to_binary(tag_ciphertext.as_slice())?,
+    ))
 }
 
 

@@ -45,6 +45,13 @@ pub enum ExecuteMsg {
 pub enum ExecuteAnswer {
     Tx {
         response: ResponseStatus,
+        counter: Uint64,
+        plaintext: Binary,
+        padded_plaintext: Binary,
+        seed: Binary,
+        nonce: Binary,
+        aad: Binary,
+        tag_ciphertext: Binary,
     },
     UpdateSeed {
         seed: Binary,
