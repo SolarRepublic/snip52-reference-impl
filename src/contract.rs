@@ -8,7 +8,7 @@ use base64::{engine::general_purpose, Engine as _};
 use hkdf::hmac::{Mac};
 use secret_toolkit::permit::{RevokedPermits, Permit,};
 use sha2::Sha256;
-use crate::crypto::{HmacSha256, sha_256, cipher_data}; //cipher_data, sha_256};
+use crate::crypto::{HmacSha256, sha_256, cipher_data};
 use crate::channel::{Channel, TxChannelData, TX_CHANNEL_SCHEMA, CHANNEL_SCHEMATA, CHANNELS};
 use crate::msg::QueryWithPermit;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, QueryAnswer, ExecuteAnswer, ResponseStatus::Success};
