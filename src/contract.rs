@@ -35,10 +35,10 @@ pub fn instantiate(
     rng_entropy.extend_from_slice(&env.block.time.seconds().to_be_bytes());
     rng_entropy.extend_from_slice(info.sender.as_bytes());
     rng_entropy.extend_from_slice(entropy);
-    let seed = env.block.random.as_ref().unwrap();
+    let rng_seed = env.block.random.as_ref().unwrap();
 
     // Create INTERNAL_SECRET
-    let ikm = seed.0.as_slice();
+    let ikm = rng_seed.0.as_slice();
     let hk: Hkdf<Sha256> = Hkdf::<Sha256>::new(Some(&sha_256(entropy)), ikm);
     let mut key = [0u8; 32];
     match hk.expand("contract_internal_secret".as_bytes(), &mut key) {
@@ -66,7 +66,7 @@ pub fn instantiate(
         channel.store(deps.storage).unwrap()
     });
 
-    let mut rng = ContractPrng::new(seed, &rng_entropy);
+    let mut rng = ContractPrng::new(rng_seed, &rng_entropy);
     let prng_seed = sha_256(
         general_purpose::STANDARD
             .encode(rng.rand_bytes())
