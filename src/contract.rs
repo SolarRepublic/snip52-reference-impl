@@ -60,8 +60,6 @@ pub fn instantiate(
         // ...
     ];
 
-    deps.api.debug("woohoo");
-
     channels.into_iter().for_each(|channel| {
         channel.store(deps.storage).unwrap()
     });
