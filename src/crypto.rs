@@ -23,8 +23,7 @@ pub fn cipher_data(
             StdError::generic_err(format!("{:?}", e)
         )
     )?;
-    let mut buffer: Vec<u8> = vec![0; 16];
-    buffer.extend_from_slice(plaintext);
+    let mut buffer: Vec<u8> = plaintext.to_vec();
     cipher
         .encrypt_in_place(GenericArray::from_slice(nonce), aad, &mut buffer)
         .map_err(|e| 
