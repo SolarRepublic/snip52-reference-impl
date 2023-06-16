@@ -2,10 +2,12 @@ use bech32::{ToBase32,Variant};
 use cosmwasm_std::{
     entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Addr, StdError, Api, CanonicalAddr, Storage, Uint64,
 };
+use hkdf::Hkdf;
 use minicbor_ser as cbor;
 use base64::{engine::general_purpose, Engine as _};
 use hkdf::hmac::{Mac};
 use secret_toolkit::permit::{RevokedPermits, Permit,};
+use sha2::Sha256;
 use crate::crypto::{HmacSha256, sha_256, cipher_data}; //cipher_data, sha_256};
 use crate::channel::{Channel, TxChannelData, TX_CHANNEL_SCHEMA, CHANNEL_SCHEMATA, CHANNELS};
 use crate::msg::QueryWithPermit;
@@ -34,10 +36,20 @@ pub fn instantiate(
     rng_entropy.extend_from_slice(info.sender.as_bytes());
     rng_entropy.extend_from_slice(entropy);
     let seed = env.block.random.as_ref().unwrap();
-    let mut rng = ContractPrng::new(seed, &rng_entropy);
-    let rand_slice = rng.rand_bytes();
-    let key = sha_256(&rand_slice);
-    INTERNAL_SECRET.save(deps.storage, &general_purpose::STANDARD.encode(key).as_bytes().to_vec())?;
+
+    // Create INTERNAL_SECRET
+    let ikm = seed.0.as_slice();
+    let hk: Hkdf<Sha256> = Hkdf::<Sha256>::new(Some(&sha_256(entropy)), ikm);
+    let mut key = [0u8; 32];
+    match hk.expand("contract_internal_secret".as_bytes(), &mut key) {
+        Ok(_) => { 
+            INTERNAL_SECRET.save(
+                deps.storage, 
+                &general_purpose::STANDARD.encode(key).as_bytes().to_vec()
+            )?; 
+        }
+        Err(e) => { return Err(StdError::generic_err(format!("{:?}", e))); }
+    };    
 
     // Channels will generally be hard-coded in contracts
     let channels: Vec<Channel> = vec![
@@ -54,6 +66,7 @@ pub fn instantiate(
         channel.store(deps.storage).unwrap()
     });
 
+    let mut rng = ContractPrng::new(seed, &rng_entropy);
     let prng_seed = sha_256(
         general_purpose::STANDARD
             .encode(rng.rand_bytes())
