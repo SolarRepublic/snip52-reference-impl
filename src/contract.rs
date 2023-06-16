@@ -131,6 +131,7 @@ fn try_tx(
  
     let encrypted_data = encrypt_notification_data(
         deps.storage,
+        deps.api,
         &env,
         &sender_raw,
         &channel,
@@ -413,6 +414,7 @@ fn notification_id(
 
 fn encrypt_notification_data(
     storage: &dyn Storage,
+    api: &dyn Api,
     env: &Env,
     addr: &CanonicalAddr,
     channel: &String,
@@ -425,7 +427,7 @@ fn encrypt_notification_data(
     let seed = get_seed(storage, addr)?;
     let nonce = [&[0_u8, 0_u8, 0_u8, 0_u8], counter.to_be_bytes().as_slice()].concat();
 
-    let aad = format!("{}:{}", env.block.height, env.message.sender.as_str());
+    let aad = format!("{}:{}", env.block.height, api.addr_humanize(&addr)?.to_string());
 
     // encrypt notification data for this event
     let tag_ciphertext = cipher_data(
