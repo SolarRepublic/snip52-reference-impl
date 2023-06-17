@@ -59,7 +59,7 @@ pub fn get_seed(
         Ok(Binary::from(seed))
     } else {
         let new_seed = hkdf_sha_256(
-            None, 
+            &None, 
             INTERNAL_SECRET.load(storage)?.as_slice(), 
             addr.as_slice()
         )?;
