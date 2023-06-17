@@ -1,4 +1,4 @@
-use cosmwasm_std::{Uint64, Binary};
+use cosmwasm_std::{Uint64, Binary, Addr};
 use schemars::JsonSchema;
 use secret_toolkit::permit::Permit;
 use serde::{Deserialize, Serialize};
@@ -12,10 +12,23 @@ pub struct InstantiateMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
-    /// transaction that emits event on the chain
-    Tx { 
-        /// channel to increment the counter on
-        channel: String,
+    /// send a message to addr
+    Send {
+        /// address you want to send the message to
+        recipient: Addr,
+        /// message
+        message: String,
+        /// optional message length padding
+        padding: Option<String>
+    },
+    /// react to a message received
+    React {
+        /// address that wrote message you are reacting to
+        author: Addr,
+        /// hash of message reacting to
+        message_hash: Binary,
+        /// emoji reaction
+        reaction: String,
         /// optional message length padding
         padding: Option<String>
     },
@@ -43,15 +56,11 @@ pub enum ExecuteMsg {
 #[derive(Serialize, Deserialize, JsonSchema, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteAnswer {
-    Tx {
+    Send {
         response: ResponseStatus,
-        counter: Uint64,
-        plaintext: Binary,
-        padded_plaintext: Binary,
-        seed: Binary,
-        nonce: Binary,
-        aad: Binary,
-        tag_ciphertext: Binary,
+    },
+    React {
+        response: ResponseStatus,
     },
     UpdateSeed {
         seed: Binary,

@@ -6,7 +6,7 @@ use minicbor_ser as cbor;
 use hkdf::hmac::{Mac};
 use secret_toolkit::permit::{RevokedPermits, Permit,};
 use crate::crypto::{HmacSha256, sha_256, cipher_data, hkdf_sha_256};
-use crate::channel::{Channel, TxChannelData, TX_CHANNEL_SCHEMA, CHANNEL_SCHEMATA, CHANNELS};
+use crate::channel::{Channel, CHANNEL_SCHEMATA, CHANNELS, MESSAGE_CHANNEL_SCHEMA, MESSAGE_CHANNEL_ID, REACTION_CHANNEL_ID, MessageChannelData, ReactionChannelData, REACTION_CHANNEL_SCHEMA};
 use crate::msg::QueryWithPermit;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, QueryAnswer, ExecuteAnswer, ResponseStatus::Success};
 use crate::signed_doc::{SignedDocument, pubkey_to_account, Document};
@@ -48,10 +48,13 @@ pub fn instantiate(
     // Channels will generally be hard-coded in contracts
     let channels: Vec<Channel> = vec![
         Channel {
-            id: "tx".to_string(),
-            schema: Some(TX_CHANNEL_SCHEMA.to_string()),
+            id: MESSAGE_CHANNEL_ID.to_string(),
+            schema: Some(MESSAGE_CHANNEL_SCHEMA.to_string()),
         },
-        // ...
+        Channel {
+            id: REACTION_CHANNEL_ID.to_string(),
+            schema: Some(REACTION_CHANNEL_SCHEMA.to_string()),
+        }
     ];
 
     channels.into_iter().for_each(|channel| {
@@ -71,11 +74,19 @@ pub fn instantiate(
 #[entry_point]
 pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> StdResult<Response> {
     match msg {
-        ExecuteMsg::Tx { channel, .. } => try_tx(
-            deps, 
-            &env, 
-            &info.sender, 
-            channel
+        ExecuteMsg::Send { recipient, message, .. } => try_send(
+            deps,
+            &env,
+            &info.sender,
+            recipient,
+            message,
+        ),
+        ExecuteMsg::React { author, message_hash, reaction, .. } => try_react(
+            deps,
+            &env,
+            author,
+            message_hash,
+            reaction,
         ),
         ExecuteMsg::UpdateSeed { signed_doc, .. } => try_update_seed(
             deps,
@@ -93,81 +104,108 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
 }
 
 /// 
-/// Execute Tx message
+/// Execute Send message
 /// 
-///   This sample transaction issues a new encrypted notification that will be 
-///   pushed to client applications and increments the sender's counter for a 
-///   specified channel.
+///   This sample transaction dispatches an encrypted notification with a `message`
+///   for an intended `recipient`. The function increments the recipients's counter 
+///   for the `message` channel.
 /// 
-///   Pseudocode for dispatching a notification
-/// 
-///   fun dispatchNotification(recipientAddr, channelId, plaintext, env) {
-///     // obtain the current notification ID
-///     let notificationId := notificationIDFor(recipientAddr, channelId)
-///
-///     // construct the notification data payload
-///     let payload := encryptNotificationData(recipientAddr, channelId, plaintext, env);
-///
-///     // increment the counter
-///     incrementCounterFor(contractAddr, channelId)
-///
-///     // emit the notification
-///     addAttributeToEventLog(notificationId, payload)
-///   }
-/// 
-fn try_tx(
+fn try_send(
     deps: DepsMut,
     env: &Env,
     sender: &Addr,
-    channel: String,
+    recipient: Addr,
+    message: String,
 ) -> StdResult<Response> {
     let sender_raw = deps.api.addr_canonicalize(sender.as_str())?;
+    let recipient_raw = deps.api.addr_canonicalize(recipient.as_str())?;
+    
+    let channel = MESSAGE_CHANNEL_ID.to_string();
 
-    // counter, padded_plaintext, seed, nonce, aad, and tag_ciphertext
-
-    let id = notification_id(deps.storage, &sender_raw, &channel)?;
+    // get notification id for recipient
+    let id = notification_id(deps.storage, &recipient_raw, &channel)?;
 
     // use CBOR to encode data
     let data = cbor::to_vec(
-        &TxChannelData {
+        &MessageChannelData {
             sender: sender_raw.clone(),
-            message: format!("You have a new message on channel '{}'", channel)
+            message
         }
     ).map_err(|e| 
         StdError::generic_err(format!("{:?}", e))
     )?;
- 
-    let (
-        encrypted_data, 
-        out_counter, 
-        out_plaintext, 
-        out_padded_plaintext, 
-        out_seed, 
-        out_nonce, 
-        out_aad, 
-        out_tag_ciphertext
-    )  = encrypt_notification_data(
+
+    // encrypt the message
+    let encrypted_data = encrypt_notification_data(
         deps.storage,
         deps.api,
         &env,
-        &sender_raw,
+        &recipient_raw,
         &channel,
         data.clone()
     )?;
 
-    increment_count(deps.storage, &channel, &sender_raw)?;
+    increment_count(deps.storage, &channel, &recipient_raw)?;
 
     Ok(Response::new()
         .set_data(
-            to_binary(&ExecuteAnswer::Tx { 
+            to_binary(&&ExecuteAnswer::Send { 
                 response: Success,
-                counter: Uint64::from(out_counter),
-                plaintext: out_plaintext,
-                padded_plaintext: out_padded_plaintext,
-                seed: out_seed,
-                nonce: out_nonce,
-                aad: out_aad,
-                tag_ciphertext: out_tag_ciphertext,
+            })?
+        )
+        .add_attribute_plaintext(
+            id.to_base64(), 
+            encrypted_data.to_base64()
+        )
+    )
+}
+
+/// 
+/// Execute React message
+/// 
+///   This sample transaction dispatches an encrypted notification with a `reaction`
+///   for a message identified by `message_hash`. The function increments the original 
+///   message author's counter for the `reaction` channel.
+/// 
+fn try_react(
+    deps: DepsMut,
+    env: &Env,
+    author: Addr,
+    message_hash: Binary,
+    reaction: String,
+) -> StdResult<Response> {
+    let author_raw = deps.api.addr_canonicalize(author.as_str())?;
+    let channel = REACTION_CHANNEL_ID.to_string();
+
+    // get notification id for original author
+    let id = notification_id(deps.storage, &author_raw, &channel)?;
+
+    // use CBOR to encode data
+    let data = cbor::to_vec(
+        &ReactionChannelData {
+            message_hash,
+            reaction
+        }
+    ).map_err(|e| 
+        StdError::generic_err(format!("{:?}", e))
+    )?;
+
+    // encrypt the message
+    let encrypted_data = encrypt_notification_data(
+        deps.storage,
+        deps.api,
+        &env,
+        &author_raw,
+        &channel,
+        data.clone()
+    )?;
+
+    increment_count(deps.storage, &channel, &author_raw)?;
+
+    Ok(Response::new()
+        .set_data(
+            to_binary(&&ExecuteAnswer::React { 
+                response: Success,
             })?
         )
         .add_attribute_plaintext(
@@ -454,7 +492,7 @@ fn encrypt_notification_data(
     addr: &CanonicalAddr,
     channel: &String,
     plaintext: Vec<u8>,
-) -> StdResult<(Binary, u64, Binary, Binary, Binary, Binary, Binary, Binary)> {
+) -> StdResult<Binary> {
     let counter = get_count(storage, channel, addr);
     let mut padded_plaintext = plaintext.clone();
     zero_pad(&mut padded_plaintext, DATA_LEN);
@@ -473,16 +511,7 @@ fn encrypt_notification_data(
         aad.as_bytes()
     )?;
 
-    Ok((
-        Binary::from(tag_ciphertext.clone()),
-        counter,
-        to_binary(&plaintext)?,
-        to_binary(&padded_plaintext)?,
-        to_binary(seed.0.as_slice())?,
-        to_binary(nonce.as_slice())?,
-        to_binary(aad.as_bytes())?,
-        to_binary(tag_ciphertext.as_slice())?,
-    ))
+    Ok(Binary::from(tag_ciphertext.clone()))
 }
 
 

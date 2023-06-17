@@ -4,7 +4,7 @@ use chacha20poly1305::{
     aead::{AeadInPlace, KeyInit,},
     ChaCha20Poly1305,
 };
-use cosmwasm_std::{StdResult, StdError, to_binary, Binary};
+use cosmwasm_std::{StdResult, StdError,};
 use generic_array::GenericArray;
 
 pub const SHA256_HASH_SIZE: usize = 32;

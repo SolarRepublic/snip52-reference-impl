@@ -1,4 +1,4 @@
-use cosmwasm_std::{Storage, StdResult, CanonicalAddr};
+use cosmwasm_std::{Storage, StdResult, CanonicalAddr, Binary};
 use secret_toolkit_storage::{Keyset, Keymap};
 use serde::{Serialize, Deserialize};
 
@@ -24,21 +24,30 @@ impl Channel {
         }
         Ok(())
     }
-
-    pub fn remove(self, storage: &mut dyn Storage) -> StdResult<()> {
-        CHANNELS.remove(storage, &self.id)?;
-        CHANNEL_SCHEMATA.remove(storage, &self.id)?;
-        Ok(())
-    }
 }
 
-/// Example data struct for tx channel 
+/// Data struct for `message` channel
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub struct TxChannelData {
+pub struct MessageChannelData {
     pub sender: CanonicalAddr,
     pub message: String,
 }
 
-/// Example CDDL Schema for TxChannelData
-pub static TX_CHANNEL_SCHEMA: &str = r#"tx={sender: bstr,message: tstr}"#;
+/// id for the `message` channel
+pub const MESSAGE_CHANNEL_ID: &str = "message";
+/// CDDL Schema for MessageChannelData
+pub const MESSAGE_CHANNEL_SCHEMA: &str = r#"tx={sender: bstr,message: tstr}"#;
+
+/// Data struct for `reaction` channel
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ReactionChannelData {
+    pub message_hash: Binary,
+    pub reaction: String,
+}
+
+/// id for the `reaction` channel
+pub const REACTION_CHANNEL_ID: &str = "reaction";
+/// CDDL Schema for ReactionChannelData
+pub const REACTION_CHANNEL_SCHEMA: &str = r#"tx={message_hash: bstr,reaction: tstr}"#;
