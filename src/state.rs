@@ -1,9 +1,6 @@
-use base64::{engine::general_purpose, Engine as _};
-use hkdf::Hkdf;
-use sha2::Sha256;
 use secret_toolkit_storage::{Keymap, Item};
-
-use cosmwasm_std::{CanonicalAddr, Storage, StdResult, StdError, Binary};
+use cosmwasm_std::{CanonicalAddr, Storage, StdResult, Binary, to_binary};
+use crate::crypto::hkdf_sha_256;
 
 pub static INTERNAL_SECRET: Item<Vec<u8>> = Item::new(b"secret");
 pub static COUNTERS: Keymap<CanonicalAddr,u64> = Keymap::new(b"counters");
@@ -61,15 +58,12 @@ pub fn get_seed(
     if let Some(seed) = may_seed {
         Ok(Binary::from(seed))
     } else {
-        let secret = INTERNAL_SECRET.load(storage)?;
-        let ikm = secret.as_slice();
-        let hk: Hkdf<Sha256> = Hkdf::<Sha256>::new(None, ikm);
-        let mut okm = [0u8; 32];
-        let seed = match hk.expand(&addr.as_slice(), &mut okm) {
-            Ok(_) => { Binary::from_base64(&general_purpose::STANDARD.encode(okm))? }
-            Err(e) => { return Err(StdError::generic_err(format!("{:?}", e))); }
-        };
-        Ok(seed)
+        let new_seed = hkdf_sha_256(
+            None, 
+            INTERNAL_SECRET.load(storage)?.as_slice(), 
+            addr.as_slice()
+        )?;
+        to_binary(&new_seed)
     }
 }
 

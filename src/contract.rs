@@ -8,7 +8,7 @@ use base64::{engine::general_purpose, Engine as _};
 use hkdf::hmac::{Mac};
 use secret_toolkit::permit::{RevokedPermits, Permit,};
 use sha2::Sha256;
-use crate::crypto::{HmacSha256, sha_256, cipher_data};
+use crate::crypto::{HmacSha256, sha_256, cipher_data, hkdf_sha_256};
 use crate::channel::{Channel, TxChannelData, TX_CHANNEL_SCHEMA, CHANNEL_SCHEMATA, CHANNELS};
 use crate::msg::QueryWithPermit;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, QueryAnswer, ExecuteAnswer, ResponseStatus::Success};
@@ -27,7 +27,7 @@ pub fn instantiate(
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> StdResult<Response> {
-    // use entropy and contract prng to create an internal secret for the contract
+    // use entropy and env.random to create an internal secret for the contract
     let entropy = msg.entropy.as_bytes();
     let entropy_len = 16 + info.sender.to_string().len() + entropy.len();
     let mut rng_entropy = Vec::with_capacity(entropy_len);
@@ -38,18 +38,16 @@ pub fn instantiate(
     let rng_seed = env.block.random.as_ref().unwrap();
 
     // Create INTERNAL_SECRET
-    let ikm = rng_seed.0.as_slice();
-    let hk: Hkdf<Sha256> = Hkdf::<Sha256>::new(Some(&sha_256(entropy)), ikm);
-    let mut key = [0u8; 32];
-    match hk.expand("contract_internal_secret".as_bytes(), &mut key) {
-        Ok(_) => { 
-            INTERNAL_SECRET.save(
-                deps.storage, 
-                &general_purpose::STANDARD.encode(key).as_bytes().to_vec()
-            )?; 
-        }
-        Err(e) => { return Err(StdError::generic_err(format!("{:?}", e))); }
-    };    
+    let salt = Some(sha_256(&rng_entropy).to_vec());
+    let internal_secret = hkdf_sha_256(
+        &salt, 
+        rng_seed.0.as_slice(), 
+        "contract_internal_secret".as_bytes()
+    )?;
+    INTERNAL_SECRET.save(
+        deps.storage, 
+        &internal_secret.to_vec()
+    )?;  
 
     // Channels will generally be hard-coded in contracts
     let channels: Vec<Channel> = vec![
@@ -64,12 +62,11 @@ pub fn instantiate(
         channel.store(deps.storage).unwrap()
     });
 
-    let mut rng = ContractPrng::new(rng_seed, &rng_entropy);
-    let prng_seed = sha_256(
-        general_purpose::STANDARD
-            .encode(rng.rand_bytes())
-            .as_bytes(),
-    );
+    let prng_seed = hkdf_sha_256(
+        &salt, 
+        rng_seed.0.as_slice(), 
+        "contract_pseudorandom_seed".as_bytes()
+    )?;
     ViewingKey::set_seed(deps.storage, &prng_seed);
 
     Ok(Response::default())

@@ -1,10 +1,10 @@
-use hkdf::hmac::Hmac;
+use hkdf::{hmac::Hmac, Hkdf};
 use sha2::{Digest, Sha256};
 use chacha20poly1305::{
     aead::{AeadInPlace, KeyInit,},
     ChaCha20Poly1305,
 };
-use cosmwasm_std::{StdResult, StdError};
+use cosmwasm_std::{StdResult, StdError, to_binary, Binary};
 use generic_array::GenericArray;
 
 pub const SHA256_HASH_SIZE: usize = 32;
@@ -30,6 +30,15 @@ pub fn cipher_data(
             StdError::generic_err(format!("{:?}", e))
         )?;
     Ok(buffer)
+}
+
+pub fn hkdf_sha_256(salt: &Option<Vec<u8>>, ikm: &[u8], info: &[u8]) -> StdResult<[u8;32]> {
+    let hk: Hkdf<Sha256> = Hkdf::<Sha256>::new(salt.as_deref().map(|s| s), ikm);
+    let mut okm = [0u8; 32];
+    match hk.expand(info, &mut okm) {
+        Ok(_) => { Ok(okm) }
+        Err(e) => { return Err(StdError::generic_err(format!("{:?}", e))); }
+    }
 }
 
 pub fn sha_256(data: &[u8]) -> [u8; SHA256_HASH_SIZE] {
