@@ -223,7 +223,9 @@ pub fn try_update_seed(
         return Err(StdError::generic_err("Previous seed does not match previous seed in signed doc"));
     }
 
-    store_seed(deps.storage, &sender_raw, signed_doc.signature.signature.clone().0)?;
+    let new_seed = sha_256(&signed_doc.signature.signature.0).to_vec();
+
+    store_seed(deps.storage, &sender_raw, new_seed)?;
 
     Ok(Response::new().set_data(to_binary(&ExecuteAnswer::UpdateSeed {
         seed: signed_doc.signature.signature,
@@ -426,8 +428,15 @@ fn notification_id(
 ///
 ///   let seed := getSeedFor(recipientAddr)
 ///
-///   // ChaCha20 expects a 96-bit (12 bytes) nonce. encode uint64 counter using BE and left-pad with 4 bytes of 0x00
-///   let nonce := concat(zeros(4), uint64BigEndian(counter))
+///   // ChaCha20 expects a 96-bit (12 bytes) nonce
+///   // take the first 12 bytes of the channel id's sha256 hash
+///   let channelIdBytes := slice(sha256(utf8ToBytes(channelId)), 0, 12)
+///
+///   // encode uint64 counter in BE and left-pad with 4 bytes of 0x00
+///   let counterBytes := concat(zeros(4), uint64BigEndian(counter))
+///
+///   // produce the nonce by XOR'ing the two previous 12-byte results
+///   let nonce := xorBytes(channelIdBytes, counterBytes)
 ///
 ///   // right-pad the plaintext with 0x00 bytes until it is of the desired length (keep in mind, payload adds 16 bytes for tag)
 ///   let message := concat(plaintext, zeros(DATA_LEN - len(plaintext)))
@@ -438,8 +447,8 @@ fn notification_id(
 ///   // encrypt notification data for this event
 ///   let [ciphertext, tag] := chacha20poly1305_encrypt(key=seed, nonce=nonce, message=message, aad=aad)
 ///
-///   // concatenate 16 bytes of tag with variable-width ciphertext
-///   let payload := concat(tag, ciphertext)
+///   // concatenate ciphertext and 16 bytes of tag (note: crypto libs typically default to doing it this way in `seal`)
+///   let payload := concat(ciphertext, tag)
 ///
 ///   return payload
 /// }
@@ -458,8 +467,9 @@ fn encrypt_notification_data(
     zero_pad(&mut padded_plaintext, DATA_LEN);
 
     let seed = get_seed(storage, addr)?;
-    let nonce = [&[0_u8, 0_u8, 0_u8, 0_u8], counter.to_be_bytes().as_slice()].concat();
-
+    let channel_id_bytes = sha_256(channel.as_bytes())[..12].to_vec();
+    let counter_bytes = [&[0_u8, 0_u8, 0_u8, 0_u8], counter.to_be_bytes().as_slice()].concat();
+    let nonce: Vec<u8> = channel_id_bytes.iter().zip(counter_bytes.iter()).map(|(&b1, &b2)| b1 ^ b2 ).collect();
     let aad = format!("{}:{}", env.block.height, api.addr_humanize(&addr)?.to_string());
 
     // encrypt notification data for this event
