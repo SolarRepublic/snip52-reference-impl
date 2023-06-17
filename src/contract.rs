@@ -2,17 +2,13 @@ use bech32::{ToBase32,Variant};
 use cosmwasm_std::{
     entry_point, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Addr, StdError, Api, CanonicalAddr, Storage, Uint64,
 };
-use hkdf::Hkdf;
 use minicbor_ser as cbor;
-use base64::{engine::general_purpose, Engine as _};
 use hkdf::hmac::{Mac};
 use secret_toolkit::permit::{RevokedPermits, Permit,};
-use sha2::Sha256;
 use crate::crypto::{HmacSha256, sha_256, cipher_data, hkdf_sha_256};
 use crate::channel::{Channel, TxChannelData, TX_CHANNEL_SCHEMA, CHANNEL_SCHEMATA, CHANNELS};
 use crate::msg::QueryWithPermit;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, QueryAnswer, ExecuteAnswer, ResponseStatus::Success};
-use crate::rng::ContractPrng;
 use crate::signed_doc::{SignedDocument, pubkey_to_account, Document};
 use crate::state::{increment_count, INTERNAL_SECRET, get_seed, store_seed, get_count};
 use crate::vk::{ViewingKey, ViewingKeyStore};
@@ -62,12 +58,12 @@ pub fn instantiate(
         channel.store(deps.storage).unwrap()
     });
 
-    let prng_seed = hkdf_sha_256(
+    let vk_seed = hkdf_sha_256(
         &salt, 
         rng_seed.0.as_slice(), 
-        "contract_pseudorandom_seed".as_bytes()
+        "contract_viewing_key_pseudorandom_seed".as_bytes()
     )?;
-    ViewingKey::set_seed(deps.storage, &prng_seed);
+    ViewingKey::set_seed(deps.storage, &vk_seed);
 
     Ok(Response::default())
 }
