@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose, Engine};
 use secret_toolkit_storage::{Keymap, Item};
 use cosmwasm_std::{CanonicalAddr, Storage, StdResult, Binary, to_binary};
 use crate::crypto::hkdf_sha_256;
@@ -63,7 +64,7 @@ pub fn get_seed(
             INTERNAL_SECRET.load(storage)?.as_slice(), 
             addr.as_slice()
         )?;
-        to_binary(&new_seed)
+        Binary::from_base64(&general_purpose::STANDARD.encode(new_seed))
     }
 }
 
