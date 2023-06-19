@@ -5,13 +5,13 @@ use cosmwasm_std::{
 use minicbor_ser as cbor;
 use hkdf::hmac::{Mac};
 use secret_toolkit::permit::{RevokedPermits, Permit,};
+use secret_toolkit::viewing_key::{ViewingKey, ViewingKeyStore};
 use crate::crypto::{HmacSha256, sha_256, cipher_data, hkdf_sha_256};
 use crate::channel::{Channel, CHANNEL_SCHEMATA, CHANNELS, MESSAGE_CHANNEL_SCHEMA, MESSAGE_CHANNEL_ID, REACTION_CHANNEL_ID, MessageChannelData, ReactionChannelData, REACTION_CHANNEL_SCHEMA};
 use crate::msg::QueryWithPermit;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, QueryAnswer, ExecuteAnswer, ResponseStatus::Success};
 use crate::signed_doc::{SignedDocument, pubkey_to_account, Document};
 use crate::state::{increment_count, INTERNAL_SECRET, get_seed, store_seed, get_count};
-use crate::vk::{ViewingKey, ViewingKeyStore};
 
 pub const DATA_LEN: usize = 256;
 pub const PREFIX_REVOKED_PERMITS: &str = "revoked_permits";
@@ -64,7 +64,7 @@ pub fn instantiate(
     let vk_seed = hkdf_sha_256(
         &salt, 
         rng_seed.0.as_slice(), 
-        "contract_viewing_key_pseudorandom_seed".as_bytes()
+        "contract_viewing_key".as_bytes()
     )?;
     ViewingKey::set_seed(deps.storage, &vk_seed);
 
