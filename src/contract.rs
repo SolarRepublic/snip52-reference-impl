@@ -139,6 +139,7 @@ fn try_send(
         deps.storage,
         deps.api,
         &env,
+        &sender_raw,
         &recipient_raw,
         &channel,
         data.clone()
@@ -195,6 +196,7 @@ fn try_react(
         deps.storage,
         deps.api,
         &env,
+        &sender_raw,
         &author_raw,
         &channel,
         data.clone()
@@ -489,19 +491,20 @@ fn encrypt_notification_data(
     storage: &dyn Storage,
     api: &dyn Api,
     env: &Env,
-    addr: &CanonicalAddr,
+    sender: &CanonicalAddr,
+    recipient: &CanonicalAddr,
     channel: &String,
     plaintext: Vec<u8>,
 ) -> StdResult<Binary> {
-    let counter = get_count(storage, channel, addr);
+    let counter = get_count(storage, channel, recipient);
     let mut padded_plaintext = plaintext.clone();
     zero_pad(&mut padded_plaintext, DATA_LEN);
 
-    let seed = get_seed(storage, addr)?;
+    let seed = get_seed(storage, recipient)?;
     let channel_id_bytes = sha_256(channel.as_bytes())[..12].to_vec();
     let counter_bytes = [&[0_u8, 0_u8, 0_u8, 0_u8], counter.to_be_bytes().as_slice()].concat();
     let nonce: Vec<u8> = channel_id_bytes.iter().zip(counter_bytes.iter()).map(|(&b1, &b2)| b1 ^ b2 ).collect();
-    let aad = format!("{}:{}", env.block.height, api.addr_humanize(&addr)?.to_string());
+    let aad = format!("{}:{}", env.block.height, api.addr_humanize(&sender)?.to_string());
 
     // encrypt notification data for this event
     let tag_ciphertext = cipher_data(
