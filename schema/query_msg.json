@@ -6,10 +6,10 @@
       "description": "Public query to list all notification channels",
       "type": "object",
       "required": [
-        "ListChannels"
+        "list_channels"
       ],
       "properties": {
-        "ListChannels": {
+        "list_channels": {
           "type": "object"
         }
       },
@@ -19,10 +19,10 @@
       "description": "Authenticated query allows clients to obtain the seed, counter, and Notification ID of a future event, for a specific channel.",
       "type": "object",
       "required": [
-        "ChannelInfo"
+        "channel_info"
       ],
       "properties": {
-        "ChannelInfo": {
+        "channel_info": {
           "type": "object",
           "required": [
             "channel",
@@ -39,9 +39,174 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "description": "Authenticated queries with permits",
+      "type": "object",
+      "required": [
+        "with_permit"
+      ],
+      "properties": {
+        "with_permit": {
+          "type": "object",
+          "required": [
+            "permit",
+            "query"
+          ],
+          "properties": {
+            "permit": {
+              "$ref": "#/definitions/Permit_for_TokenPermissions"
+            },
+            "query": {
+              "$ref": "#/definitions/QueryWithPermit"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {
+    "Binary": {
+      "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
+      "type": "string"
+    },
+    "PermitParams_for_TokenPermissions": {
+      "type": "object",
+      "required": [
+        "allowed_tokens",
+        "chain_id",
+        "permissions",
+        "permit_name"
+      ],
+      "properties": {
+        "allowed_tokens": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "chain_id": {
+          "type": "string"
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/TokenPermissions"
+          }
+        },
+        "permit_name": {
+          "type": "string"
+        }
+      }
+    },
+    "PermitSignature": {
+      "type": "object",
+      "required": [
+        "pub_key",
+        "signature"
+      ],
+      "properties": {
+        "pub_key": {
+          "$ref": "#/definitions/PubKey"
+        },
+        "signature": {
+          "$ref": "#/definitions/Binary"
+        }
+      }
+    },
+    "Permit_for_TokenPermissions": {
+      "type": "object",
+      "required": [
+        "params",
+        "signature"
+      ],
+      "properties": {
+        "params": {
+          "$ref": "#/definitions/PermitParams_for_TokenPermissions"
+        },
+        "signature": {
+          "$ref": "#/definitions/PermitSignature"
+        }
+      }
+    },
+    "PubKey": {
+      "type": "object",
+      "required": [
+        "type",
+        "value"
+      ],
+      "properties": {
+        "type": {
+          "description": "ignored, but must be \"tendermint/PubKeySecp256k1\" otherwise the verification will fail",
+          "type": "string"
+        },
+        "value": {
+          "description": "Secp256k1 PubKey",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Binary"
+            }
+          ]
+        }
+      }
+    },
+    "QueryWithPermit": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "channel_info"
+          ],
+          "properties": {
+            "channel_info": {
+              "type": "object",
+              "required": [
+                "channel"
+              ],
+              "properties": {
+                "channel": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "TokenPermissions": {
+      "oneOf": [
+        {
+          "description": "Allowance for SNIP-20 - Permission to query allowance of the owner & spender",
+          "type": "string",
+          "enum": [
+            "allowance"
+          ]
+        },
+        {
+          "description": "Balance for SNIP-20 - Permission to query balance",
+          "type": "string",
+          "enum": [
+            "balance"
+          ]
+        },
+        {
+          "description": "History for SNIP-20 - Permission to query transfer_history & transaction_hisotry",
+          "type": "string",
+          "enum": [
+            "history"
+          ]
+        },
+        {
+          "description": "Owner permission indicates that the bearer of this permit should be granted all the access of the creator/signer of the permit.  SNIP-721 uses this to grant viewing access to all data that the permit creator owns and is whitelisted for. For SNIP-721 use, a permit with Owner permission should NEVER be given to anyone else.  If someone wants to share private data, they should whitelist the address they want to share with via a SetWhitelistedApproval tx, and that address will view the data by creating their own permit with Owner permission",
+          "type": "string",
+          "enum": [
+            "owner"
+          ]
+        }
+      ]
+    },
     "ViewerInfo": {
       "description": "the address and viewing key making an authenticated query request",
       "type": "object",

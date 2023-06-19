@@ -3,20 +3,21 @@
   "title": "ExecuteMsg",
   "oneOf": [
     {
-      "description": "transaction that emits event on the chain",
+      "description": "send a message to addr",
       "type": "object",
       "required": [
-        "tx"
+        "send"
       ],
       "properties": {
-        "tx": {
+        "send": {
           "type": "object",
           "required": [
-            "channel"
+            "message",
+            "recipient"
           ],
           "properties": {
-            "channel": {
-              "description": "channel to increment the counter on",
+            "message": {
+              "description": "message",
               "type": "string"
             },
             "padding": {
@@ -25,6 +26,61 @@
                 "string",
                 "null"
               ]
+            },
+            "recipient": {
+              "description": "address you want to send the message to",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Addr"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "react to a message received",
+      "type": "object",
+      "required": [
+        "react"
+      ],
+      "properties": {
+        "react": {
+          "type": "object",
+          "required": [
+            "author",
+            "message_hash",
+            "reaction"
+          ],
+          "properties": {
+            "author": {
+              "description": "address that wrote message you are reacting to",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Addr"
+                }
+              ]
+            },
+            "message_hash": {
+              "description": "hash of message reacting to",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/Binary"
+                }
+              ]
+            },
+            "padding": {
+              "description": "optional message length padding",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reaction": {
+              "description": "emoji reaction",
+              "type": "string"
             }
           }
         }
@@ -77,15 +133,42 @@
             "key"
           ],
           "properties": {
+            "key": {
+              "description": "viewing key",
+              "type": "string"
+            },
             "padding": {
               "description": "optional message length padding",
               "type": [
                 "string",
                 "null"
               ]
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Revoke a permit",
+      "type": "object",
+      "required": [
+        "revoke_permit"
+      ],
+      "properties": {
+        "revoke_permit": {
+          "type": "object",
+          "required": [
+            "permit_name"
+          ],
+          "properties": {
+            "padding": {
+              "type": [
+                "string",
+                "null"
+              ]
             },
-            "key": {
-              "description": "viewing key",
+            "permit_name": {
               "type": "string"
             }
           }
@@ -95,6 +178,10 @@
     }
   ],
   "definitions": {
+    "Addr": {
+      "description": "A human readable address.\n\nIn Cosmos, this is typically bech32 encoded. But for multi-chain smart contracts no assumptions should be made other than being UTF-8 encoded and of reasonable length.\n\nThis type represents a validated address. It can be created in the following ways 1. Use `Addr::unchecked(input)` 2. Use `let checked: Addr = deps.api.addr_validate(input)?` 3. Use `let checked: Addr = deps.api.addr_humanize(canonical_addr)?` 4. Deserialize from JSON. This must only be done from JSON that was validated before such as a contract's state. `Addr` must not be used in messages sent by the user because this would result in unvalidated instances.\n\nThis type is immutable. If you really need to mutate it (Really? Are you sure?), create a mutable copy using `let mut mutable = Addr::to_string()` and operate on that `String` instance.",
+      "type": "string"
+    },
     "Binary": {
       "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
       "type": "string"
