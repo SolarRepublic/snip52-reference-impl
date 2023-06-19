@@ -37,12 +37,13 @@ pub struct MessageChannelData {
 /// id for the `message` channel
 pub const MESSAGE_CHANNEL_ID: &str = "message";
 /// CDDL Schema for MessageChannelData
-pub const MESSAGE_CHANNEL_SCHEMA: &str = r#"tx={sender: bstr,message: tstr}"#;
+pub const MESSAGE_CHANNEL_SCHEMA: &str = r#"message={sender: bstr,message: tstr}"#;
 
 /// Data struct for `reaction` channel
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ReactionChannelData {
+    pub sender: CanonicalAddr,
     pub message_hash: Binary,
     pub reaction: String,
 }
@@ -50,4 +51,4 @@ pub struct ReactionChannelData {
 /// id for the `reaction` channel
 pub const REACTION_CHANNEL_ID: &str = "reaction";
 /// CDDL Schema for ReactionChannelData
-pub const REACTION_CHANNEL_SCHEMA: &str = r#"tx={message_hash: bstr,reaction: tstr}"#;
+pub const REACTION_CHANNEL_SCHEMA: &str = r#"reaction={sender:bstr, message_hash: bstr,reaction: tstr}"#;

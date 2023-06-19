@@ -84,6 +84,7 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
         ExecuteMsg::React { author, message_hash, reaction, .. } => try_react(
             deps,
             &env,
+            &info.sender,
             author,
             message_hash,
             reaction,
@@ -170,10 +171,12 @@ fn try_send(
 fn try_react(
     deps: DepsMut,
     env: &Env,
+    sender: &Addr,
     author: Addr,
     message_hash: Binary,
     reaction: String,
 ) -> StdResult<Response> {
+    let sender_raw = deps.api.addr_canonicalize(sender.as_str())?;
     let author_raw = deps.api.addr_canonicalize(author.as_str())?;
     let channel = REACTION_CHANNEL_ID.to_string();
 
@@ -183,6 +186,7 @@ fn try_react(
     // use CBOR to encode data
     let data = cbor::to_vec(
         &ReactionChannelData {
+            sender: sender_raw,
             message_hash,
             reaction
         }
