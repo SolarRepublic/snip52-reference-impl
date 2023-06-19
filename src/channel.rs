@@ -1,4 +1,4 @@
-use cosmwasm_std::{Storage, StdResult, CanonicalAddr, Binary};
+use cosmwasm_std::{Storage, StdResult,};
 use secret_toolkit_storage::{Keyset, Keymap};
 use serde::{Serialize, Deserialize};
 
@@ -26,39 +26,10 @@ impl Channel {
     }
 }
 
-/// Data struct for `message` channel
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct MessageChannelData {
-    pub sender: CanonicalAddr,
-    pub message: String,
-}
-
-impl MessageChannelData {
-    pub fn as_tuple(self) -> (CanonicalAddr, String) {
-        (self.sender, self.message)
-    }
-}
-
 /// id for the `message` channel
 pub const MESSAGE_CHANNEL_ID: &str = "message";
 /// CDDL Schema for MessageChannelData
 pub const MESSAGE_CHANNEL_SCHEMA: &str = "message=[sender:bstr,message:tstr]";
-
-/// Data struct for `reaction` channel
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct ReactionChannelData {
-    pub sender: CanonicalAddr,
-    pub message_hash: Binary,
-    pub reaction: String,
-}
-
-impl ReactionChannelData {
-    pub fn as_tuple(self) -> (CanonicalAddr, Binary, String) {
-        (self.sender, self.message_hash, self.reaction)
-    }
-}
 
 /// id for the `reaction` channel
 pub const REACTION_CHANNEL_ID: &str = "reaction";

@@ -7,7 +7,7 @@ use hkdf::hmac::{Mac};
 use secret_toolkit::permit::{RevokedPermits, Permit,};
 use secret_toolkit::viewing_key::{ViewingKey, ViewingKeyStore};
 use crate::crypto::{HmacSha256, sha_256, cipher_data, hkdf_sha_256};
-use crate::channel::{Channel, CHANNEL_SCHEMATA, CHANNELS, MESSAGE_CHANNEL_SCHEMA, MESSAGE_CHANNEL_ID, REACTION_CHANNEL_ID, MessageChannelData, ReactionChannelData, REACTION_CHANNEL_SCHEMA};
+use crate::channel::{Channel, CHANNEL_SCHEMATA, CHANNELS, MESSAGE_CHANNEL_SCHEMA, MESSAGE_CHANNEL_ID, REACTION_CHANNEL_ID, REACTION_CHANNEL_SCHEMA};
 use crate::msg::QueryWithPermit;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, QueryAnswer, ExecuteAnswer, ResponseStatus::Success};
 use crate::signed_doc::{SignedDocument, pubkey_to_account, Document};
@@ -127,12 +127,10 @@ fn try_send(
     let id = notification_id(deps.storage, &recipient_raw, &channel)?;
 
     // use CBOR to encode data
-    let data = cbor::to_vec(
-        &MessageChannelData {
-            sender: sender_raw.clone(),
-            message
-        }.as_tuple()
-    ).map_err(|e| 
+    let data = cbor::to_vec(&(
+        sender_raw.as_slice(),
+        message
+    )).map_err(|e| 
         StdError::generic_err(format!("{:?}", e))
     )?;
 
@@ -184,13 +182,11 @@ fn try_react(
     let id = notification_id(deps.storage, &author_raw, &channel)?;
 
     // use CBOR to encode data
-    let data = cbor::to_vec(
-        &ReactionChannelData {
-            sender: sender_raw,
-            message_hash,
-            reaction
-        }.as_tuple()
-    ).map_err(|e| 
+    let data = cbor::to_vec(&(
+        sender_raw.as_slice(),
+        message_hash.as_slice(),
+        reaction
+    )).map_err(|e| 
         StdError::generic_err(format!("{:?}", e))
     )?;
 
