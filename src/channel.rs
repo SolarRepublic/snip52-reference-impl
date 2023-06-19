@@ -34,10 +34,16 @@ pub struct MessageChannelData {
     pub message: String,
 }
 
+impl MessageChannelData {
+    pub fn as_tuple(self) -> (CanonicalAddr, String) {
+        (self.sender, self.message)
+    }
+}
+
 /// id for the `message` channel
 pub const MESSAGE_CHANNEL_ID: &str = "message";
 /// CDDL Schema for MessageChannelData
-pub const MESSAGE_CHANNEL_SCHEMA: &str = r#"message={sender: bstr,message: tstr}"#;
+pub const MESSAGE_CHANNEL_SCHEMA: &str = "message=[sender:bstr,message:tstr]";
 
 /// Data struct for `reaction` channel
 #[derive(Serialize, Deserialize)]
@@ -48,7 +54,13 @@ pub struct ReactionChannelData {
     pub reaction: String,
 }
 
+impl ReactionChannelData {
+    pub fn as_tuple(self) -> (CanonicalAddr, Binary, String) {
+        (self.sender, self.message_hash, self.reaction)
+    }
+}
+
 /// id for the `reaction` channel
 pub const REACTION_CHANNEL_ID: &str = "reaction";
 /// CDDL Schema for ReactionChannelData
-pub const REACTION_CHANNEL_SCHEMA: &str = r#"reaction={sender:bstr, message_hash: bstr,reaction: tstr}"#;
+pub const REACTION_CHANNEL_SCHEMA: &str = "reaction=[sender:bstr,message_hash:bstr,reaction:tstr]";

@@ -131,7 +131,7 @@ fn try_send(
         &MessageChannelData {
             sender: sender_raw.clone(),
             message
-        }
+        }.as_tuple()
     ).map_err(|e| 
         StdError::generic_err(format!("{:?}", e))
     )?;
@@ -189,7 +189,7 @@ fn try_react(
             sender: sender_raw,
             message_hash,
             reaction
-        }
+        }.as_tuple()
     ).map_err(|e| 
         StdError::generic_err(format!("{:?}", e))
     )?;
