@@ -501,6 +501,8 @@ fn encrypt_notification_data(
     let channel_id_bytes = sha_256(channel.as_bytes())[..12].to_vec();
     let counter_bytes = [&[0_u8, 0_u8, 0_u8, 0_u8], counter.to_be_bytes().as_slice()].concat();
     let nonce: Vec<u8> = channel_id_bytes.iter().zip(counter_bytes.iter()).map(|(&b1, &b2)| b1 ^ b2 ).collect();
+    // TODO: add option to use tx hash instead of sender in aad
+    //       requires tx hash to be added to `env`
     let aad = format!("{}:{}", env.block.height, sender.to_string());
 
     // encrypt notification data for this event
