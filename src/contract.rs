@@ -153,7 +153,7 @@ fn try_send(
             })?
         )
         .add_attribute_plaintext(
-            id.to_base64(), 
+            format!("snip52:{}", id.to_base64()),
             encrypted_data.to_base64()
         )
     )
@@ -209,7 +209,7 @@ fn try_react(
             })?
         )
         .add_attribute_plaintext(
-            id.to_base64(), 
+            format!("snip52:{}", id.to_base64()),
             encrypted_data.to_base64()
         )
     )
